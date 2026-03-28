@@ -82,7 +82,7 @@ class TankModel(BaseModel):
 
     @property
     def name(self) -> str:
-        return "Tank水箱模型"
+        return "Tank水箱模型(完整版)"
 
     @property
     def model_type(self) -> str:

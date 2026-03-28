@@ -286,3 +286,78 @@ def compare_all_models(
     results.sort(key=lambda x: x["nse"], reverse=True)
 
     return results
+
+
+# ============================================================
+# 模型参数信息获取
+# ============================================================
+def get_model_param_info(model_name: str) -> Dict[str, Dict]:
+    """
+    获取模型的参数描述、单位、范围等信息
+    
+    Args:
+        model_name: 模型名称
+        
+    Returns:
+        参数信息字典 {参数名: {description, unit, bounds}}
+    """
+    param_info = {
+        '水箱模型': {
+            'k1': {'description': '快速流调蓄系数', 'unit': '-', 'bounds': (0.01, 0.3)},
+            'k2': {'description': '慢速流调蓄系数（基流）', 'unit': '-', 'bounds': (0.001, 0.05)},
+            'c': {'description': '产流系数', 'unit': '-', 'bounds': (0.01, 0.3)},
+        },
+        'HBV模型': {
+            'fc': {'description': '田间持水量', 'unit': 'mm', 'bounds': (50.0, 500.0)},
+            'beta': {'description': '形状参数', 'unit': '-', 'bounds': (1.0, 5.0)},
+            'k0': {'description': '快速出流系数', 'unit': '-', 'bounds': (0.01, 0.5)},
+            'k1': {'description': '慢速出流系数', 'unit': '-', 'bounds': (0.001, 0.1)},
+            'lp': {'description': '蒸散发限制系数', 'unit': '-', 'bounds': (0.3, 1.0)},
+        },
+        '新安江模型': {
+            'k': {'description': '蒸散发系数', 'unit': '-', 'bounds': (0.5, 1.5)},
+            'b': {'description': '蓄水容量曲线指数', 'unit': '-', 'bounds': (0.1, 0.5)},
+            'im': {'description': '不透水面积比例', 'unit': '-', 'bounds': (0.01, 0.1)},
+            'um': {'description': '上层土壤蓄水容量', 'unit': 'mm', 'bounds': (10, 50)},
+            'lm': {'description': '下层土壤蓄水容量', 'unit': 'mm', 'bounds': (50, 150)},
+            'dm': {'description': '深层土壤蓄水容量', 'unit': 'mm', 'bounds': (10, 100)},
+            'c': {'description': '深层蒸散发系数', 'unit': '-', 'bounds': (0.01, 0.2)},
+            'sm': {'description': '自由水蓄水容量', 'unit': 'mm', 'bounds': (10, 80)},
+            'ex': {'description': '自由水容量曲线指数', 'unit': '-', 'bounds': (1.0, 2.0)},
+            'ki': {'description': '壤中流出流系数', 'unit': '-', 'bounds': (0.3, 0.7)},
+            'kg': {'description': '地下水出流系数', 'unit': '-', 'bounds': (0.01, 0.2)},
+            'cs': {'description': '流域汇流系数', 'unit': '-', 'bounds': (0.1, 0.5)},
+            'l': {'description': '滞后时间', 'unit': 'h', 'bounds': (0, 24)},
+            'xg': {'description': '地下水消退系数', 'unit': '-', 'bounds': (0.9, 0.999)},
+        },
+    }
+    
+    return param_info.get(model_name, {})
+
+
+def generate_param_table(model_name: str, params: Dict[str, float]) -> pd.DataFrame:
+    """
+    生成参数表格
+    
+    Args:
+        model_name: 模型名称
+        params: 最优参数字典
+        
+    Returns:
+        DataFrame格式的参数表格
+    """
+    param_info = get_model_param_info(model_name)
+    
+    rows = []
+    for key, value in params.items():
+        info = param_info.get(key, {'description': '-', 'unit': '-', 'bounds': (0, 1)})
+        bounds = info.get('bounds', (0, 1))
+        rows.append({
+            '参数名': key,
+            '物理意义': info.get('description', '-'),
+            '单位': info.get('unit', '-'),
+            '取值范围': f"{bounds[0]:.3f} ~ {bounds[1]:.3f}",
+            '最优值': f"{value:.6f}"
+        })
+    
+    return pd.DataFrame(rows)

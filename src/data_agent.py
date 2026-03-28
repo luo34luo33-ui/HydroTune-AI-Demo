@@ -4,7 +4,9 @@
 """
 import pandas as pd
 import numpy as np
-from typing import Callable, Tuple
+from typing import Callable, Tuple, List, Dict, Any
+from dataclasses import dataclass
+from datetime import datetime
 
 
 # ============================================================
@@ -72,6 +74,140 @@ def get_timestep_info(timestep: str) -> dict:
         }
     }
     return info.get(timestep, info['daily'])
+
+
+# ============================================================
+# 洪水场次数据结构
+# ============================================================
+@dataclass
+class FloodEvent:
+    """洪水场次数据类"""
+    name: str
+    start_idx: int
+    end_idx: int
+    start_date: Any
+    end_date: Any
+    precip: np.ndarray
+    evap: np.ndarray
+    observed_flow: np.ndarray
+    
+    @property
+    def duration(self) -> int:
+        """场次持续时间步数"""
+        return self.end_idx - self.start_idx + 1
+
+
+# ============================================================
+# 洪水场次自动识别
+# ============================================================
+def detect_flood_events(
+    dates: pd.Series,
+    precip: np.ndarray,
+    flow: np.ndarray,
+    evap: np.ndarray = None,
+    precip_threshold: float = 0.8,
+    min_gap: int = 5,
+    min_duration: int = 10,
+    max_events: int = 10
+) -> List[FloodEvent]:
+    """
+    基于降水和流量峰值自动识别洪水场次
+    
+    Args:
+        dates: 日期序列
+        precip: 降水序列
+        flow: 流量序列
+        evap: 蒸发序列（可选）
+        precip_threshold: 降水阈值比例（相对于最大降水），超过此比例的降水视为洪水降水
+        min_gap: 两场洪水之间的最小间隔（步数）
+        min_duration: 最小场次持续时间（步数）
+        max_events: 最大识别场次数
+        
+    Returns:
+        洪水场次列表
+    """
+    if evap is None:
+        evap = np.zeros_like(precip)
+    
+    n = len(precip)
+    
+    precip_max = np.max(precip)
+    flow_max = np.max(flow)
+    flow_mean = np.mean(flow)
+    
+    precip_threshold_val = precip_max * precip_threshold
+    
+    is_flood = np.zeros(n, dtype=bool)
+    for i in range(n):
+        if precip[i] >= precip_threshold_val or flow[i] > flow_mean + 0.3 * flow_max:
+            is_flood[i] = True
+    
+    flood_regions = []
+    in_region = False
+    start = 0
+    
+    for i in range(n):
+        if is_flood[i] and not in_region:
+            start = max(0, i - 2)
+            in_region = True
+        elif (not is_flood[i] or i == n - 1) and in_region:
+            end = i if i == n - 1 else i
+            duration = end - start + 1
+            if duration >= min_duration:
+                flood_regions.append((start, end))
+            in_region = False
+    
+    gap_merged = []
+    for region in flood_regions:
+        if gap_merged and region[0] - gap_merged[-1][1] <= min_gap:
+            gap_merged[-1] = (gap_merged[-1][0], region[1])
+        else:
+            gap_merged.append(region)
+    
+    final_events = gap_merged[:max_events]
+    
+    events = []
+    for idx, (start, end) in enumerate(final_events):
+        if hasattr(dates, 'iloc'):
+            start_date = dates.iloc[start] if start < len(dates) else dates.iloc[0]
+            end_date = dates.iloc[end] if end < len(dates) else dates.iloc[-1]
+        else:
+            start_date = dates[start] if start < len(dates) else dates[0]
+            end_date = dates[end] if end < len(dates) else dates[-1]
+        
+        events.append(FloodEvent(
+            name=f"洪水场次{idx + 1}",
+            start_idx=start,
+            end_idx=end,
+            start_date=start_date,
+            end_date=end_date,
+            precip=precip[start:end + 1],
+            evap=evap[start:end + 1],
+            observed_flow=flow[start:end + 1]
+        ))
+    
+    return events
+
+
+def split_into_events(df: pd.DataFrame, event_col: str = None, n_events: int = None) -> List[pd.DataFrame]:
+    """
+    将数据按指定方式分割成多个洪水场次
+    
+    Args:
+        df: 完整数据DataFrame
+        event_col: 按哪一列分割（如年份列）
+        n_events: 均分场次数
+        
+    Returns:
+        分割后的DataFrame列表
+    """
+    if event_col and event_col in df.columns:
+        return [group for _, group in df.groupby(event_col)]
+    elif n_events:
+        chunk_size = len(df) // n_events
+        return [df.iloc[i * chunk_size:(i + 1) * chunk_size] for i in range(n_events)]
+    else:
+        return [df]
 
 
 # ============================================================

@@ -7,10 +7,19 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import time
+from datetime import datetime
+from typing import List, Dict, Tuple
+from io import StringIO
 
 from src.llm_api import call_minimax
-from src.data_agent import clean_data_with_sandbox, infer_timestep, get_timestep_info
-from src.hydro_calc import compare_all_models, calibrate_model_fast, calc_nse, calc_rmse, calc_mae, calc_pbias
+from src.data_agent import (
+    clean_data_with_sandbox, infer_timestep, get_timestep_info,
+    detect_flood_events, FloodEvent
+)
+from src.hydro_calc import (
+    calibrate_model_fast, calc_nse, calc_rmse, calc_mae, calc_pbias,
+    get_model_param_info, generate_param_table
+)
 from src.models.registry import ModelRegistry
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -37,15 +46,23 @@ st.caption("上传数据 → 智能清洗 → 多模型率定 → 自动报告")
 # ============================================================
 # 侧边栏
 # ============================================================
-RECOMMENDED_MODELS = ['Tank水箱模型', 'HBV模型', '新安江模型']
-SKIP_MODELS = ['HBV模型(完整版)']  # 完整版HBV模型暂不支持小时尺度，使用简化版
+RECOMMENDED_MODELS = ['水箱模型', 'HBV模型', '新安江模型']
+SKIP_MODELS = ['Tank水箱模型', 'HBV模型(完整版)']
 
 with st.sidebar:
     st.header("📁 数据上传")
-    uploaded_file = st.file_uploader(
-        "上传水文数据文件",
+    uploaded_files = st.file_uploader(
+        "上传水文数据文件（支持多个文件）",
         type=["csv", "xlsx", "xls"],
-        help="支持 CSV、Excel 格式，系统将自动识别列名",
+        accept_multiple_files=True,
+        help="支持多文件上传，每个文件对应一场洪水",
+    )
+
+    upload_mode = st.radio(
+        "上传模式",
+        options=["单文件（自动识别多场次）", "多文件（每文件一场洪水）"],
+        index=0,
+        horizontal=True,
     )
 
     st.divider()
@@ -66,364 +83,329 @@ with st.sidebar:
     for model_name in RECOMMENDED_MODELS:
         st.write(f"✅ {model_name}")
     
-    st.caption("注：完整版HBV模型(需日尺度)，简化版支持小时尺度")
-
-    st.divider()
-
-    st.header("📐 未来扩展")
-    st.info(
-        """
-    **预留接口支持：**
-    - DEM数据 (GeoTIFF)
-    - 土地利用数据
-    - 流域边界 (Shapefile)
-    - 分布式模型
-    """
-    )
+    st.caption("注：完整版模型暂不支持，使用简化版")
 
 
 # ============================================================
 # 主流程
 # ============================================================
-if uploaded_file is not None:
+if uploaded_files and len(uploaded_files) > 0:
 
-    # ---- 阶段1：读取数据 ----
-    with st.status("📥 正在读取上传数据...", expanded=True) as status:
-        st.write("解析文件格式...")
-
+    all_results = {}
+    all_flood_events = []
+    report_sections = []
+    
+    # ---- 处理每个文件 ----
+    for file_idx, uploaded_file in enumerate(uploaded_files):
+        st.divider()
+        st.subheader(f"📂 文件 {file_idx + 1}: {uploaded_file.name}")
+        
+        # 读取数据
         try:
             if uploaded_file.name.endswith(".csv"):
                 raw_df = pd.read_csv(uploaded_file)
             else:
                 raw_df = pd.read_excel(uploaded_file)
-
-            st.write(f"✅ 读取成功，共 {raw_df.shape[0]} 行，{raw_df.shape[1]} 列")
-            st.write(f"列名: {list(raw_df.columns)}")
-
-            status.update(label="✅ 数据读取完成", state="complete")
+            st.write(f"✅ 读取成功，共 {raw_df.shape[0]} 行")
         except Exception as e:
-            st.error(f"数据读取失败: {e}")
-            st.stop()
-
-    # 显示原始数据预览
-    with st.expander("📊 查看原始数据"):
-        st.dataframe(raw_df.head(20))
-
-    # ---- 阶段2：智能数据清洗 ----
-    with st.status("🧠 数据智能体正在分析数据格式...", expanded=True) as status:
-        st.write("提取数据指纹...")
-        time.sleep(0.5)  # 仪式感
-
-        st.write("调用 LLM 生成清洗规则...")
-        time.sleep(0.5)
-
-        # 执行数据清洗
-        try:
-            clean_df, detected_timestep = clean_data_with_sandbox(raw_df, call_minimax)
-            st.write("✅ 数据清洗完成，已标准化为: date, precip, evap, flow")
-        except Exception as e:
-            st.error(f"数据清洗失败: {e}")
-            st.stop()
-
-        status.update(label="✅ 数据清洗完成", state="complete")
-
-    # 显示清洗后的数据
-    with st.expander("📊 查看清洗后数据"):
-        st.dataframe(clean_df.head(20))
-
-    # 检查数据有效性
-    if "precip" not in clean_df.columns or "flow" not in clean_df.columns:
-        st.error("数据清洗后仍缺少必要列 (precip/flow)，请检查原始数据")
-        st.stop()
-
-    # 填充缺失值
-    clean_df = clean_df.fillna(0)
-
-    # ---- 阶段2.5：时间尺度确认 ----
-    st.divider()
-    st.subheader("⏱️ 时间尺度确认")
-
-    timestep_info = get_timestep_info(detected_timestep)
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        st.info(f"🔍 检测到数据为 **{timestep_info['label']}** ({timestep_info['description']})")
-    with col2:
-        user_timestep = st.radio(
-            "请确认时间尺度：",
-            options=['hourly', 'daily'],
-            index=0 if detected_timestep == 'hourly' else 1,
-            horizontal=True,
-            label_visibility="collapsed"
-        )
-
-    if user_timestep != detected_timestep:
-        st.warning(f"⚠️ 已切换为 **{'小时' if user_timestep == 'hourly' else '日'}尺度**，单位转换已调整")
-
-    # 提取数据数组
-    precip = np.array(clean_df["precip"].values)
-    evap = np.array(clean_df["evap"].values)
-    observed = np.array(clean_df["flow"].values)
-
-    # 确定需要率定的模型列表
-    models_to_calibrate = []
-    models_skipped = []
-
-    for model_name in RECOMMENDED_MODELS:
-        if model_name in SKIP_MODELS and user_timestep == 'hourly':
-            models_skipped.append(model_name)
+            st.error(f"读取失败: {e}")
             continue
-        models_to_calibrate.append(model_name)
-
-    if models_skipped:
-        st.warning(f"⚠️ 以下模型暂不支持小时尺度，已跳过: {', '.join(models_skipped)}")
-
-    # ---- 阶段3：多模型率定 ----
-    st.divider()
-    st.subheader("🌊 多模型自动率定")
-
-    st.write(f"数据长度: {len(precip)} 个时间步 ({'小时' if user_timestep == 'hourly' else '日'}尺度)")
-    st.write(f"正在率定 {len(models_to_calibrate)} 个模型（两阶段快速算法）...")
-
-    def calibrate_single_model(model_name):
-        try:
-            return calibrate_model_fast(
-                model_name, precip, evap, observed,
-                max_iter=max_iter,
-                timestep=user_timestep
+        
+        # 数据清洗
+        with st.expander("🧠 数据清洗"):
+            try:
+                clean_df, detected_timestep = clean_data_with_sandbox(raw_df, call_minimax)
+                st.write("✅ 清洗完成")
+                st.dataframe(clean_df.head(10))
+            except Exception as e:
+                st.error(f"清洗失败: {e}")
+                continue
+        
+        if "precip" not in clean_df.columns or "flow" not in clean_df.columns:
+            st.error("缺少必要列")
+            continue
+        
+        clean_df = clean_df.fillna(0)
+        
+        # 时间尺度确认
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            timestep_info = get_timestep_info(detected_timestep)
+            st.info(f"⏱️ {timestep_info['label']}")
+        with col2:
+            user_timestep = st.radio(
+                "尺度",
+                options=['hourly', 'daily'],
+                index=0 if detected_timestep == 'hourly' else 1,
+                horizontal=True,
+                label_visibility="collapsed",
+                key=f"ts_{file_idx}"
             )
-        except Exception as e:
-            return None
-
-    with st.status("🌊 启动多模型并发率定...", expanded=True) as status:
-        start_time = time.time()
-
-        results = []
-        with ThreadPoolExecutor(max_workers=len(models_to_calibrate)) as executor:
-            futures = {executor.submit(calibrate_single_model, name): name for name in models_to_calibrate}
-            progress_bar = st.progress(0)
+        
+        # 洪水场次识别
+        st.write("**🔍 洪水场次识别**")
+        precip_arr = np.array(clean_df['precip'].values)
+        flow_arr = np.array(clean_df['flow'].values)
+        evap_arr = np.array(clean_df['evap'].values)
+        
+        flood_events = detect_flood_events(
+            clean_df['date'],
+            precip_arr,
+            flow_arr,
+            evap_arr
+        )
+        
+        if len(flood_events) == 0:
+            flood_events = [FloodEvent(
+                name="全部数据",
+                start_idx=0,
+                end_idx=len(clean_df) - 1,
+                start_date=clean_df['date'].iloc[0],
+                end_date=clean_df['date'].iloc[-1],
+                precip=precip_arr,
+                evap=evap_arr,
+                observed_flow=flow_arr
+            )]
+        
+        st.write(f"识别到 {len(flood_events)} 场洪水")
+        
+        file_results = {}
+        
+        # 率定每场洪水
+        for event in flood_events:
+            event_key = f"{uploaded_file.name}_{event.name}"
+            all_flood_events.append(event_key)
             
-            for i, future in enumerate(as_completed(futures)):
-                model_name = futures[future]
+            st.write(f"**📊 率定 {event.name}** ({event.start_date} ~ {event.end_date})")
+            
+            def calibrate_event(event_obj, model_name):
                 try:
-                    result = future.result()
+                    return calibrate_model_fast(
+                        model_name,
+                        event_obj.precip,
+                        event_obj.evap,
+                        event_obj.observed_flow,
+                        max_iter=max_iter,
+                        timestep=user_timestep
+                    )
+                except Exception as e:
+                    return None
+            
+            event_results = []
+            with st.spinner(f"正在率定..."):
+                for model_name in RECOMMENDED_MODELS:
+                    if model_name in SKIP_MODELS:
+                        continue
+                    result = calibrate_event(event, model_name)
                     if result:
                         params, nse, simulated = result
-                        results.append({
+                        event_results.append({
                             "model_name": model_name,
                             "params": params,
                             "nse": nse,
-                            "rmse": calc_rmse(observed, simulated),
-                            "mae": calc_mae(observed, simulated),
-                            "pbias": calc_pbias(observed, simulated),
+                            "rmse": calc_rmse(event.observed_flow, simulated),
+                            "mae": calc_mae(event.observed_flow, simulated),
+                            "pbias": calc_pbias(event.observed_flow, simulated),
                             "simulated": simulated,
                         })
                         st.write(f"  ✅ {model_name}: NSE = {nse:.4f}")
-                except Exception as e:
-                    st.write(f"  ❌ {model_name}: {e}")
-                
-                progress_bar.progress((i + 1) / len(RECOMMENDED_MODELS))
+            
+            if event_results:
+                event_results.sort(key=lambda x: x["nse"], reverse=True)
+                file_results[event.name] = event_results
         
-        results.sort(key=lambda x: x["nse"], reverse=True)
-        
-        elapsed = time.time() - start_time
-        st.write(f"⏱️ 率定完成，耗时 {elapsed:.1f} 秒")
-
-        status.update(label="✅ 率定完成", state="complete")
-
-    # ---- 阶段4：结果展示 ----
+        all_results[uploaded_file.name] = file_results
+    
+    # ============================================================
+    # 结果展示
+    # ============================================================
     st.divider()
-    st.subheader("📈 模拟结果对比")
-
-    # 指标对比表
-    col1, col2 = st.columns([1, 1])
-
-    with col1:
-        st.write("**性能指标对比**")
-        metrics_df = pd.DataFrame(
-            [
-                {
+    st.subheader("📈 率定结果")
+    
+    # 汇总指标表
+    summary_data = []
+    for file_name, file_results in all_results.items():
+        for event_name, event_results in file_results.items():
+            for r in event_results:
+                summary_data.append({
+                    "文件": file_name,
+                    "场次": event_name,
                     "模型": r["model_name"],
-                    "NSE": f"{r['nse']:.4f}",
-                    "RMSE": f"{r['rmse']:.4f}",
-                    "MAE": f"{r['mae']:.4f}",
-                    "PBIAS": f"{r['pbias']:.2f}%",
-                }
-                for r in results
-            ]
-        )
-        st.dataframe(metrics_df, width='stretch', hide_index=True)
-
-    with col2:
-        st.write("**最优模型**")
-        best = results[0]
-        st.success(f"🏆 {best['model_name']} (NSE = {best['nse']:.4f})")
-
-        st.write("**最优参数**")
-        for param, value in best["params"].items():
-            st.write(f"- {param}: {value:.6f}")
-
-    # 流量过程线图
-    fig, ax = plt.subplots(figsize=(12, 5))
-    ax.plot(observed, "k-", label="实测流量", linewidth=1.5, alpha=0.8)
-
-    colors = ["#e74c3c", "#3498db", "#2ecc71", "#9b59b6", "#f39c12"]
-    for i, r in enumerate(results):
-        ax.plot(
-            r["simulated"],
-            color=colors[i % len(colors)],
-            label=f"{r['model_name']} (NSE={r['nse']:.3f})",
-            linewidth=1,
-            alpha=0.7,
-        )
-
-    ax.set_xlabel("时间步")
-    ax.set_ylabel("流量 (m3/s)")
-    ax.set_title("流量模拟结果对比")
-    ax.legend(loc="upper right")
-    ax.grid(True, alpha=0.3)
-
-    st.pyplot(fig)
-
-    # 降水过程线
-    fig2, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 6), sharex=True)
-
-    ax1.bar(range(len(precip)), precip, color="#3498db", alpha=0.7, width=1)
-    ax1.set_ylabel("降水 (mm)")
-    ax1.set_title("降水过程")
-    ax1.invert_yaxis()  # 降水向下
-    ax1.grid(True, alpha=0.3)
-
-    ax2.plot(observed, "k-", label="实测", linewidth=1.5)
-    ax2.plot(
-        results[0]["simulated"],
-        "r-",
-        label=f"最优模型 ({results[0]['model_name']})",
-        linewidth=1,
-    )
-    ax2.set_xlabel("时间步")
-    ax2.set_ylabel("流量 (m3/s)")
-    ax2.set_title("流量过程")
-    ax2.legend()
-    ax2.grid(True, alpha=0.3)
-
-    plt.tight_layout()
-    st.pyplot(fig2)
-
-    # ---- 阶段5：LLM 生成报告 ----
+                    "NSE": r["nse"],
+                    "RMSE": r["rmse"],
+                    "PBIAS": f"{r['pbias']:.1f}%"
+                })
+    
+    if summary_data:
+        summary_df = pd.DataFrame(summary_data)
+        st.dataframe(summary_df, use_container_width=True, hide_index=True)
+        
+        # 每个模型的参数表格
+        st.divider()
+        st.subheader("📋 模型参数详情")
+        
+        for file_name, file_results in all_results.items():
+            with st.expander(f"📁 {file_name}"):
+                for event_name, event_results in file_results.items():
+                    st.markdown(f"**{event_name}**")
+                    
+                    for r in event_results:
+                        st.markdown(f"*{r['model_name']}* (NSE={r['nse']:.4f})")
+                        param_df = generate_param_table(r['model_name'], r['params'])
+                        st.dataframe(param_df, use_container_width=True, hide_index=True)
+        
+        # 流量过程线对比图
+        st.divider()
+        st.subheader("📉 流量过程线对比")
+        
+        n_events = len(all_flood_events)
+        n_cols = min(2, n_events)
+        n_rows = (n_events + n_cols - 1) // n_cols
+        
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(14, 5 * n_rows))
+        if n_events == 1:
+            axes = [axes]
+        else:
+            axes = axes.flatten() if n_rows > 1 else axes
+        
+        colors = ["#e74c3c", "#3498db", "#2ecc71"]
+        
+        for idx, (file_name, file_results) in enumerate(all_results.items()):
+            if idx < len(axes):
+                ax = axes[idx]
+                
+                first_event_results = None
+                for e_idx, (event_name, event_results) in enumerate(file_results.items()):
+                    if first_event_results is None and event_results:
+                        first_event_results = event_results
+                    for m_idx, r in enumerate(event_results):
+                        label = f"{r['model_name']} (NSE={r['nse']:.2f})"
+                        ax.plot(r["simulated"], color=colors[m_idx % len(colors)], 
+                               label=label, linewidth=1, alpha=0.7)
+                
+                if first_event_results:
+                    ax.plot(np.zeros_like(first_event_results[0]["simulated"]), "k-", label="实测", linewidth=2)
+                ax.set_title(f"{file_name}")
+                ax.legend(fontsize=8, loc='upper right')
+                ax.grid(True, alpha=0.3)
+                ax.set_xlabel("时间步")
+                ax.set_ylabel("流量 (m³/s)")
+        
+        for idx in range(len(all_results), len(axes)):
+            axes[idx].axis('off')
+        
+        plt.tight_layout()
+        st.pyplot(fig)
+    
+    # ============================================================
+    # 智能分析报告
+    # ============================================================
     st.divider()
+    st.subheader("📝 智能分析报告")
+    
+    if summary_data:
+        summary_df = pd.DataFrame(summary_data)
+        summary_md = summary_df.to_markdown(index=False)
+        
+        report_prompt = f"""你是一位资深水文专家。请基于以下多场次洪水率定结果，撰写一份专业的分析报告。
 
-    with st.status("📝 正在生成智能分析报告...", expanded=True) as status:
-        # 构造结果摘要
-        results_summary = "\n".join(
-            [
-                f"- {r['model_name']}: NSE={r['nse']:.4f}, RMSE={r['rmse']:.4f}, "
-                f"MAE={r['mae']:.4f}, PBIAS={r['pbias']:.2f}%"
-                for r in results
-            ]
-        )
-
-        best_params_str = "\n".join(
-            [f"  - {k}: {v:.6f}" for k, v in results[0]["params"].items()]
-        )
-
-        report_prompt = f"""你是一位资深水文专家。请基于以下率定结果，撰写一份专业的模型比较报告。
-
-**数据概况：**
-- 数据长度: {len(precip)} 个时间步
-- 平均降水: {np.nanmean(precip):.2f} mm
-- 平均流量: {np.nanmean(observed):.2f} m3/s
-
-**率定结果：**
-{results_summary}
-
-**最优模型 ({results[0]['model_name']}) 的参数：**
-{best_params_str}
+**率定结果汇总：**
+{summary_md}
 
 **要求：**
-1. 只基于上述数据说话，不要编造不存在的数据
-2. 分析各模型的适用性，解释NSE值的含义
-3. 给出推荐结论，说明哪个模型最适合该流域
-4. 对最优模型的参数进行物理解释
-5. 使用 Markdown 格式输出，包含适当的标题和列表
-6. 报告要专业但通俗易懂
+1. 分析各模型在不同场次洪水中的表现
+2. 评估模型的稳定性和适用性
+3. 给出综合推荐
+4. 使用 Markdown 格式
 """
-
-        report = call_minimax(report_prompt)
-
-        # 检查是否出错
-        if report.startswith("[ERROR]"):
-            st.warning(f"LLM报告生成失败: {report}")
-            # 使用备用报告
-            report = f"""
-## 模型比较分析报告
-
-### 一、数据概况
-- 数据长度: {len(precip)} 个时间步
-- 平均降水: {np.nanmean(precip):.2f} mm
-- 平均流量: {np.nanmean(observed):.2f} m3/s
-
-### 二、率定结果
-
-| 模型 | NSE | RMSE | MAE | PBIAS |
-|------|-----|------|-----|-------|
-"""
-            for r in results:
-                report += f"| {r['model_name']} | {r['nse']:.4f} | {r['rmse']:.4f} | {r['mae']:.4f} | {r['pbias']:.2f}% |\n"
-
-            report += f"""
-### 三、结论
-
-**推荐模型: {results[0]['model_name']}**
-
-该模型在本次率定中表现最优，NSE值为 {results[0]['nse']:.4f}，表明模型能够解释 {results[0]['nse']*100:.1f}% 的流量变化。
-
-**最优参数:**
-"""
-            for k, v in results[0]["params"].items():
-                report += f"- {k}: {v:.6f}\n"
-
-        status.update(label="✅ 报告生成完成", state="complete")
-
-    st.subheader("📋 智能分析报告")
+        
+        with st.spinner("正在生成报告..."):
+            report = call_minimax(report_prompt)
+            if report.startswith("[ERROR]"):
+                report = f"## 水文模型率定分析报告\n\n报告生成失败: {report}"
+    else:
+        report = "## 暂无率定结果"
+    
     st.markdown(report)
+    
+    # 导出报告按钮
+    if summary_data and not report.startswith("[ERROR]"):
+        report_with_header = f"""# 水文模型率定分析报告
+
+**生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+---
+
+{report}
+"""
+        
+        st.download_button(
+            "📥 导出报告 (Markdown)",
+            data=report_with_header,
+            file_name=f"calibration_report_{datetime.now().strftime('%Y%m%d_%H%M')}.md",
+            mime="text/markdown"
+        )
 
 else:
     # 欢迎页面
     st.info("👈 请在左侧上传水文数据文件开始分析")
-
-    st.divider()
-
+    
     col1, col2, col3 = st.columns(3)
-
     with col1:
-        st.metric("率定模型", f"{len(RECOMMENDED_MODELS)} 个")
-
+        st.metric("支持模型", f"{len(RECOMMENDED_MODELS)} 个")
     with col2:
         st.metric("支持格式", "CSV / Excel")
-
     with col3:
         st.metric("率定算法", "两阶段(并行)")
-
+    
     st.divider()
-
+    
     st.subheader("📖 使用说明")
-    st.markdown(
-        """
-    1. **上传数据**：在左侧上传 CSV 或 Excel 格式的水文数据
-    2. **智能清洗**：系统自动识别列名并标准化数据格式
-    3. **自动率定**：对所有注册模型进行参数率定
-    4. **结果对比**：查看各模型性能指标和流量过程线
-    5. **智能报告**：自动生成专业的模型比较分析报告
-    """
-    )
-
+    st.markdown("""
+    1. **上传数据**：上传一个或多个水文数据文件
+    2. **洪水场次**：系统自动识别每场洪水
+    3. **自动率定**：对每场洪水分别进行多模型率定
+    4. **结果对比**：查看性能指标、参数表格、流量过程线
+    5. **智能报告**：自动生成分析报告并支持导出
+    """)
+    
     st.subheader("📊 数据格式要求")
-    st.markdown(
-        """
+    st.markdown("""
     数据应包含以下列（列名支持中英文）：
     - **时间列**: date / time / 日期 / 时间
     - **降水列**: precip / rainfall / p / 降水 / 降雨
     - **蒸发列**: evap / et / 蒸发 (可选)
     - **流量列**: flow / discharge / q / 流量 / 径流
-    """
-    )
+    """)
+
+# 欢迎页面（无文件上传时显示）
+if not uploaded_files:
+    st.info("👈 请在左侧上传水文数据文件开始分析")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("支持模型", f"{len(RECOMMENDED_MODELS)} 个")
+    with col2:
+        st.metric("支持格式", "CSV / Excel")
+    with col3:
+        st.metric("率定算法", "两阶段(并行)")
+    
+    st.divider()
+    
+    st.subheader("📖 使用说明")
+    st.markdown("""
+    1. **上传数据**：上传一个或多个水文数据文件
+    2. **洪水场次**：系统自动识别每场洪水
+    3. **自动率定**：对每场洪水分别进行多模型率定
+    4. **结果对比**：查看性能指标、参数表格、流量过程线
+    5. **智能报告**：自动生成分析报告并支持导出
+    """)
+    
+    st.subheader("📊 数据格式要求")
+    st.markdown("""
+    数据应包含以下列（列名支持中英文）：
+    - **时间列**: date / time / 日期 / 时间
+    - **降水列**: precip / rainfall / p / 降水 / 降雨
+    - **蒸发列**: evap / et / 蒸发 (可选)
+    - **流量列**: flow / discharge / q / 流量 / 径流
+    """)
