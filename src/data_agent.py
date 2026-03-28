@@ -105,88 +105,45 @@ def detect_flood_events(
     precip: np.ndarray,
     flow: np.ndarray,
     evap: np.ndarray = None,
-    precip_threshold: float = 0.8,
-    min_gap: int = 5,
-    min_duration: int = 10,
-    max_events: int = 10
+    **kwargs
 ) -> List[FloodEvent]:
     """
     基于降水和流量峰值自动识别洪水场次
+    
+    当前版本：同一文件的所有数据视为一场洪水
+    后续版本将支持基于流量涨落特征的洪水场次识别
     
     Args:
         dates: 日期序列
         precip: 降水序列
         flow: 流量序列
         evap: 蒸发序列（可选）
-        precip_threshold: 降水阈值比例（相对于最大降水），超过此比例的降水视为洪水降水
-        min_gap: 两场洪水之间的最小间隔（步数）
-        min_duration: 最小场次持续时间（步数）
-        max_events: 最大识别场次数
         
     Returns:
-        洪水场次列表
+        洪水场次列表（当前版本只有一场）
     """
     if evap is None:
         evap = np.zeros_like(precip)
     
     n = len(precip)
     
-    precip_max = np.max(precip)
-    flow_max = np.max(flow)
-    flow_mean = np.mean(flow)
+    if hasattr(dates, 'iloc'):
+        start_date = dates.iloc[0]
+        end_date = dates.iloc[-1]
+    else:
+        start_date = dates[0]
+        end_date = dates[-1]
     
-    precip_threshold_val = precip_max * precip_threshold
-    
-    is_flood = np.zeros(n, dtype=bool)
-    for i in range(n):
-        if precip[i] >= precip_threshold_val or flow[i] > flow_mean + 0.3 * flow_max:
-            is_flood[i] = True
-    
-    flood_regions = []
-    in_region = False
-    start = 0
-    
-    for i in range(n):
-        if is_flood[i] and not in_region:
-            start = max(0, i - 2)
-            in_region = True
-        elif (not is_flood[i] or i == n - 1) and in_region:
-            end = i if i == n - 1 else i
-            duration = end - start + 1
-            if duration >= min_duration:
-                flood_regions.append((start, end))
-            in_region = False
-    
-    gap_merged = []
-    for region in flood_regions:
-        if gap_merged and region[0] - gap_merged[-1][1] <= min_gap:
-            gap_merged[-1] = (gap_merged[-1][0], region[1])
-        else:
-            gap_merged.append(region)
-    
-    final_events = gap_merged[:max_events]
-    
-    events = []
-    for idx, (start, end) in enumerate(final_events):
-        if hasattr(dates, 'iloc'):
-            start_date = dates.iloc[start] if start < len(dates) else dates.iloc[0]
-            end_date = dates.iloc[end] if end < len(dates) else dates.iloc[-1]
-        else:
-            start_date = dates[start] if start < len(dates) else dates[0]
-            end_date = dates[end] if end < len(dates) else dates[-1]
-        
-        events.append(FloodEvent(
-            name=f"洪水场次{idx + 1}",
-            start_idx=start,
-            end_idx=end,
-            start_date=start_date,
-            end_date=end_date,
-            precip=precip[start:end + 1],
-            evap=evap[start:end + 1],
-            observed_flow=flow[start:end + 1]
-        ))
-    
-    return events
+    return [FloodEvent(
+        name="洪水场次1",
+        start_idx=0,
+        end_idx=n - 1,
+        start_date=start_date,
+        end_date=end_date,
+        precip=precip,
+        evap=evap,
+        observed_flow=flow
+    )]
 
 
 def split_into_events(df: pd.DataFrame, event_col: str = None, n_events: int = None) -> List[pd.DataFrame]:
