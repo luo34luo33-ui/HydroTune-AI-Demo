@@ -1,24 +1,31 @@
 # Hydromind-Demo
 
-水文模型集成演示项目，支持多种概念性水文模型的统一调用。
+水文模型智能率定系统，支持多模型集成、多场次洪水率定、参数优化与智能报告。
+
+## 主要特性
+
+- **多模型支持**：水箱模型、HBV模型、新安江模型
+- **多场次率定**：自动识别洪水场次，支持多文件批量处理
+- **智能清洗**：LLM 驱动的数据自动清洗与格式标准化
+- **时间尺度适配**：支持日尺度和小时尺度数据
+- **智能报告**：自动生成专业分析报告，支持 Markdown 导出
 
 ## 模型推荐
 
 ### 生产推荐使用
 
-| 模型 | 类名 | 描述 | 参数数量 | 适用场景 |
-|------|------|------|---------|---------|
-| **Tank水箱模型** | `TankModel` | 日本学者Sugawara提出的多层水箱模型 | 16个 | 湿润地区流域模拟 |
-| **HBV模型** | `HBVModelAdapter` | 瑞典水文气象局开发的概念性水文模型 | 10个 | 寒温带/有积雪流域 |
-| **新安江模型** | `XAJModel` | 中国学者提出的三水源模型 | 15个 | 中国湿润地区 |
+| 模型 | 描述 | 参数数量 | 适用场景 |
+|------|------|---------|----------|
+| **水箱模型** | 简化版双层调蓄水箱模型 | 3个 | 通用流域模拟 |
+| **HBV模型** | 简化版概念性水文模型 | 5个 | 通用流域模拟 |
+| **新安江模型** | 三水源概念性水文模型 | 14个 | 中国湿润地区 |
 
-### 演示用模型 (deprecated)
+### 暂不支持模型
 
-| 模型 | 类名 | 说明 |
-|------|------|------|
-| ~~水箱模型~~ | `SimpleTankModel` | 已废弃，请使用Tank水箱模型 |
-| 线性水库模型 | `LinearReservoirModel` | 独立汇流模型，仍可使用 |
-| ~~HBV简化模型~~ | `HBVLikeModel` | 已废弃，请使用HBV模型 | |
+| 模型 | 说明 |
+|------|------|
+| Tank水箱模型(完整版) | 多层水箱结构，暂不支持小时尺度 |
+| HBV模型(完整版) | 含积雪模块，暂不支持小时尺度 |
 
 ## 快速开始
 
@@ -28,113 +35,61 @@
 pip install -r requirements.txt
 ```
 
-### 基本使用
+### 运行应用
 
-```python
-from src.models import ModelRegistry
-import numpy as np
-
-# 查看所有可用模型
-print(ModelRegistry.list_models())
-
-# 准备输入数据
-precip = np.random.rand(365) * 10  # 日降水 (mm)
-evap = np.random.rand(365) * 3     # 日蒸散发 (mm)
-
-# 获取模型并运行（完整调用）
-model = ModelRegistry.get_model("Tank水箱模型")
-flow = model.run(precip, evap, {}, {'area': 410.0, 'del_t': 24.0})
+```bash
+streamlit run app.py
 ```
 
-### 简化调用 (推荐)
+### 数据格式
 
-所有推荐模型支持简化调用，自动使用默认参数：
+上传的 CSV/Excel 文件需包含以下列（列名支持中英文）：
 
-```python
-from src.models import ModelRegistry
-import numpy as np
+| 列名 | 说明 | 单位 |
+|------|------|------|
+| date | 时间 | - |
+| precip | 降水 | mm |
+| evap | 蒸发（可选） | mm |
+| flow | 流量 | m³/s |
 
-precip = np.random.rand(365) * 10
-evap = np.random.rand(365) * 3
+## 参数说明
 
-# Tank水箱模型 - 仅需precip和evap
-model = ModelRegistry.get_model("Tank水箱模型")
-flow = model.run(precip, evap, {})  # 自动使用默认spatial_data
+### 水箱模型
 
-# HBV模型 - 仅需precip和evap
-model = ModelRegistry.get_model("HBV模型")
-flow = model.run(precip, evap, {})  # 自动估算温度和月数据
+| 参数名 | 物理意义 | 单位 | 取值范围 |
+|--------|----------|------|----------|
+| k1 | 快速流调蓄系数 | - | 0.01 ~ 0.3 |
+| k2 | 慢速流调蓄系数（基流） | - | 0.001 ~ 0.05 |
+| c | 产流系数 | - | 0.01 ~ 0.3 |
 
-# 新安江模型 - 仅需precip和evap
-model = ModelRegistry.get_model("新安江模型")
-flow = model.run(precip, evap, {})
-```
+### HBV模型
 
-## 模型接口规范
+| 参数名 | 物理意义 | 单位 | 取值范围 |
+|--------|----------|------|----------|
+| fc | 田间持水量 | mm | 50 ~ 500 |
+| beta | 形状参数 | - | 1.0 ~ 5.0 |
+| k0 | 快速出流系数 | - | 0.01 ~ 0.5 |
+| k1 | 慢速出流系数 | - | 0.001 ~ 0.1 |
+| lp | 蒸散发限制系数 | - | 0.3 ~ 1.0 |
 
-所有模型继承自 `BaseModel` 抽象基类，遵循统一接口：
+### 新安江模型
 
-```python
-from src.models.base_model import BaseModel
-
-class BaseModel(ABC):
-    @property
-    def name(self) -> str:
-        """模型名称"""
-        pass
-
-    @property
-    def param_bounds(self) -> Dict[str, Tuple[float, float]]:
-        """参数取值范围"""
-        pass
-
-    def run(
-        self,
-        precip: np.ndarray,           # 降水序列 (mm)
-        evap: np.ndarray,            # 蒸发序列 (mm)
-        params: Dict[str, float],     # 模型参数
-        spatial_data: Dict = None,    # 空间数据
-        temperature: np.ndarray = None # 温度序列 (°C)
-    ) -> np.ndarray:
-        """运行模型，返回流量序列 (m³/s)"""
-        pass
-```
-
-### 各模型参数说明
-
-#### Tank水箱模型
-```python
-# 完整调用
-spatial_data = {
-    'area': 410.0,    # 流域面积 (km²)
-    'del_t': 24.0     # 时间步长 (小时)，默认24
-}
-flow = model.run(precip, evap, params, spatial_data)
-
-# 简化调用 (自动使用默认值)
-flow = model.run(precip, evap, params)
-```
-
-#### HBV模型
-```python
-# 完整调用
-spatial_data = {
-    'area': 410.0,                          # 流域面积 (km²)
-    'monthly_temp': np.array([...]),       # 月平均温度 (°C)，长度12
-    'monthly_pet': np.array([...]),        # 月平均PET (mm/day)，长度12
-}
-temperature = np.array([...])  # 日温度序列 (°C)
-flow = model.run(precip, evap, params, spatial_data, temperature)
-
-# 简化调用 (自动估算)
-flow = model.run(precip, evap, params)
-```
-
-#### 新安江模型
-```python
-# 只需基本输入
-flow = model.run(precip, evap, params)
-```
+| 参数名 | 物理意义 | 单位 | 取值范围 |
+|--------|----------|------|----------|
+| k | 蒸散发系数 | - | 0.5 ~ 1.5 |
+| b | 蓄水容量曲线指数 | - | 0.1 ~ 0.5 |
+| im | 不透水面积比例 | - | 0.01 ~ 0.1 |
+| um | 上层土壤蓄水容量 | mm | 10 ~ 50 |
+| lm | 下层土壤蓄水容量 | mm | 50 ~ 150 |
+| dm | 深层土壤蓄水容量 | mm | 10 ~ 100 |
+| c | 深层蒸散发系数 | - | 0.01 ~ 0.2 |
+| sm | 自由水蓄水容量 | mm | 10 ~ 80 |
+| ex | 自由水容量曲线指数 | - | 1.0 ~ 2.0 |
+| ki | 壤中流出流系数 | - | 0.3 ~ 0.7 |
+| kg | 地下水出流系数 | - | 0.01 ~ 0.2 |
+| cs | 流域汇流系数 | - | 0.1 ~ 0.5 |
+| l | 滞后时间 | h | 0 ~ 24 |
+| xg | 地下水消退系数 | - | 0.9 ~ 0.999 |
 
 ## 项目结构
 
@@ -142,28 +97,37 @@ flow = model.run(precip, evap, params)
 Hydromind-Demo/
 ├── src/
 │   ├── models/                 # 模型接口层
-│   │   ├── base_model.py       # 抽象基类
-│   │   ├── registry.py         # 模型注册表
-│   │   ├── model_tank.py       # Tank模型适配器
-│   │   ├── model_hbv.py        # HBV模型适配器
-│   │   └── model_xaj.py        # 新安江模型适配器
-│   ├── hydro_calc.py           # 水文计算
-│   ├── agent/                  # 智能体
-│   └── data/                   # 数据处理
-├── tank-model-structured/      # Tank模型源码
-├── HBV_model_structured/       # HBV模型源码
-├── XAJ-model-structured/        # 新安江模型源码
-└── demo_data/                  # 示例数据
+│   │   ├── base_model.py      # 抽象基类
+│   │   ├── registry.py        # 模型注册表
+│   │   ├── example_model.py    # 简化模型实现
+│   │   ├── model_tank.py      # Tank模型适配器
+│   │   ├── model_hbv.py       # HBV模型适配器
+│   │   └── model_xaj.py       # 新安江模型适配器
+│   ├── hydro_calc.py          # 水文计算与率定
+│   ├── data_agent.py          # 数据清洗与场次识别
+│   └── llm_api.py             # LLM接口
+├── tank-model-structured/     # Tank模型源码
+├── HBV_model_structured/     # HBV模型源码
+├── XAJ-model-structured/      # 新安江模型源码
+└── demo_data/                 # 示例数据
 ```
+
+## 率定算法
+
+采用两阶段快速率定算法：
+
+1. **全局搜索**：使用 `dual_annealing` 进行全局优化
+2. **局部优化**：使用 `L-BFGS-B` 进行精细调整
+
+## 数据流域面积
+
+默认流域面积：**150.7944 km²**
+
+可在上传数据后根据实际情况调整。
 
 ## 添加新模型
 
-参考 `src/models/model_xaj.py` 的实现方式：
-
-1. 创建模型适配器类，继承 `BaseModel`
-2. 实现 `name` 和 `param_bounds` 属性
-3. 实现 `run()` 方法
-4. 在 `src/models/__init__.py` 中注册
+参考 `src/models/example_model.py` 的实现方式：
 
 ```python
 from .base_model import BaseModel
@@ -175,11 +139,18 @@ class MyModel(BaseModel):
     
     @property
     def param_bounds(self) -> Dict[str, Tuple[float, float]]:
-        return {'param1': (0, 10), 'param2': (0, 1)}
+        return {'k1': (0.01, 0.3), 'k2': (0.001, 0.05), 'c': (0.01, 0.3)}
     
     def run(self, precip, evap, params, spatial_data=None, temperature=None):
         # 实现模型逻辑
         return flow
+```
+
+然后在 `src/models/__init__.py` 中注册：
+
+```python
+from .my_model import MyModel
+ModelRegistry.register(MyModel())
 ```
 
 ## 参考资料
