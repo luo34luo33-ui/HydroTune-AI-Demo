@@ -249,8 +249,11 @@ if uploaded_files and len(uploaded_files) > 0:
         all_precip.extend(precip_arr.tolist())
         all_evap.extend(evap_arr.tolist())
         all_flow.extend(flow_arr.tolist())
-        
-        st.write(f"✅ {uploaded_file.name}: {len(precip_arr)} 行 | {len(flood_events)} 场洪水")
+    
+    # 文件信息折叠
+    with st.expander("📂 已上传文件详情", expanded=False):
+        for f in uploaded_files:
+            st.write(f"• {f.name}")
     
     # 时间尺度确认
     st.divider()
