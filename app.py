@@ -152,6 +152,14 @@ if uploaded_files and len(uploaded_files) > 0:
         st.stop()
     
     # ---- 处理每个文件 ----
+    all_precip = []
+    all_evap = []
+    all_flow = []
+    all_dates = []
+    all_file_events = []
+    detected_timestep = 'daily'
+    user_timestep = 'daily'
+    
     for file_idx, uploaded_file in enumerate(uploaded_files):
         st.divider()
         st.subheader(f"📂 文件 {file_idx + 1}: {uploaded_file.name}")
@@ -189,27 +197,9 @@ if uploaded_files and len(uploaded_files) > 0:
         
         clean_df = raw_df.fillna(0)
         
-        # 检测时间尺度
-        detected_timestep = infer_timestep(clean_df['date'])
-        
-        st.write("✅ 列名映射完成")
-        with st.expander("查看清洗后数据"):
-            st.dataframe(clean_df.head(10))
-        
-        # 时间尺度确认
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            timestep_info = get_timestep_info(detected_timestep)
-            st.info(f"⏱️ {timestep_info['label']}")
-        with col2:
-            user_timestep = st.radio(
-                "尺度",
-                options=['hourly', 'daily'],
-                index=0 if detected_timestep == 'hourly' else 1,
-                horizontal=True,
-                label_visibility="collapsed",
-                key=f"ts_{file_idx}"
-            )
+        # 检测时间尺度（使用第一个文件的时间尺度）
+        if file_idx == 0:
+            detected_timestep = infer_timestep(clean_df['date'])
         
         # 洪水场次识别
         st.write("**🔍 洪水场次识别**")
@@ -238,62 +228,145 @@ if uploaded_files and len(uploaded_files) > 0:
         
         st.write(f"识别到 {len(flood_events)} 场洪水")
         
-        file_results = {}
-        
-        # 率定每场洪水
+        # 收集每场洪水数据用于后续绘图
         for event in flood_events:
-            # 生成日期8位格式的场次名称
             if hasattr(event.start_date, 'strftime'):
                 event_date_str = event.start_date.strftime('%Y%m%d')
             else:
                 event_date_str = str(event.start_date)[:10].replace('-', '')
-            event_name = event_date_str
             
-            event_key = f"{uploaded_file.name}_{event_name}"
-            all_flood_events.append(event_key)
-            
-            st.write(f"**📊 率定 {event_name}** ({event.start_date} ~ {event.end_date})")
-            
-            def calibrate_event(event_obj, model_name):
-                try:
-                    spatial_data = {'area': catchment_area}
-                    return calibrate_model_fast(
-                        model_name,
-                        event_obj.precip,
-                        event_obj.evap,
-                        event_obj.observed_flow,
-                        max_iter=max_iter,
-                        spatial_data=spatial_data,
-                        timestep=user_timestep
-                    )
-                except Exception as e:
-                    return None
-            
-            event_results = []
-            with st.spinner(f"正在率定..."):
-                for model_name in RECOMMENDED_MODELS:
-                    if model_name in SKIP_MODELS:
-                        continue
-                    result = calibrate_event(event, model_name)
-                    if result:
-                        params, nse, simulated = result
-                        event_results.append({
-                            "model_name": model_name,
-                            "params": params,
-                            "nse": nse,
-                            "rmse": calc_rmse(event.observed_flow, simulated),
-                            "mae": calc_mae(event.observed_flow, simulated),
-                            "pbias": calc_pbias(event.observed_flow, simulated),
-                            "simulated": simulated,
-                            "observed": event.observed_flow,
-                        })
-                        st.write(f"  ✅ {model_name}: NSE = {nse:.4f}")
-            
-            if event_results:
-                event_results.sort(key=lambda x: x["nse"], reverse=True)
-                file_results[event.name] = event_results
+            all_file_events.append({
+                'file_name': uploaded_file.name,
+                'event_name': event_date_str,
+                'start_date': event.start_date,
+                'end_date': event.end_date,
+                'precip': event.precip,
+                'evap': event.evap,
+                'observed_flow': event.observed_flow,
+            })
         
-        all_results[uploaded_file.name] = file_results
+        # 收集所有数据用于率定
+        all_precip.extend(precip_arr.tolist())
+        all_evap.extend(evap_arr.tolist())
+        all_flow.extend(flow_arr.tolist())
+        
+        with st.expander("查看数据"):
+            st.dataframe(clean_df.head(10))
+    
+    # 时间尺度确认
+    st.divider()
+    st.subheader("⏱️ 时间尺度确认")
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        timestep_info = get_timestep_info(detected_timestep)
+        st.info(f"⏱️ {timestep_info['label']}")
+    with col2:
+        user_timestep = st.radio(
+            "尺度",
+            options=['hourly', 'daily'],
+            index=0 if detected_timestep == 'hourly' else 1,
+            horizontal=True,
+            label_visibility="collapsed"
+        )
+    
+    # ============================================================
+    # 合并所有数据，统一率定
+    # ============================================================
+    st.divider()
+    st.subheader("🌊 统一率定（共用最优参数）")
+    
+    all_precip = np.array(all_precip)
+    all_evap = np.array(all_evap)
+    all_flow = np.array(all_flow)
+    
+    st.write(f"📊 合并数据：共 {len(all_precip)} 个时间步")
+    
+    # 使用合并后的数据进行率定
+    calibration_results = {}
+    
+    def calibrate_model(model_name):
+        try:
+            spatial_data = {'area': catchment_area}
+            return calibrate_model_fast(
+                model_name,
+                all_precip,
+                all_evap,
+                all_flow,
+                max_iter=max_iter,
+                spatial_data=spatial_data,
+                timestep=user_timestep
+            )
+        except Exception as e:
+            return None
+    
+    with st.spinner("正在率定..."):
+        for model_name in RECOMMENDED_MODELS:
+            if model_name in SKIP_MODELS:
+                continue
+            result = calibrate_model(model_name)
+            if result:
+                params, nse, simulated = result
+                calibration_results[model_name] = {
+                    "model_name": model_name,
+                    "params": params,
+                    "nse": nse,
+                    "rmse": calc_rmse(all_flow, simulated),
+                    "mae": calc_mae(all_flow, simulated),
+                    "pbias": calc_pbias(all_flow, simulated),
+                    "simulated": simulated,
+                }
+                st.write(f"  ✅ {model_name}: NSE = {nse:.4f}")
+    
+    # ============================================================
+    # 使用统一参数模拟每场洪水
+    # ============================================================
+    st.divider()
+    st.subheader("📊 各场次洪水模拟")
+    
+    all_results = {}
+    
+    for model_name, calib_result in calibration_results.items():
+        params = calib_result['params']
+        
+        for event_info in all_file_events:
+            file_name = event_info['file_name']
+            event_name = event_info['event_name']
+            
+            if file_name not in all_results:
+                all_results[file_name] = {}
+            
+            try:
+                spatial_data = {'area': catchment_area, 'timestep': user_timestep}
+                model = ModelRegistry.get_model(model_name)
+                simulated = model.run(
+                    event_info['precip'],
+                    event_info['evap'],
+                    params,
+                    spatial_data
+                )
+                
+                event_result = {
+                    "model_name": model_name,
+                    "params": params,
+                    "nse": calc_nse(event_info['observed_flow'], simulated),
+                    "rmse": calc_rmse(event_info['observed_flow'], simulated),
+                    "mae": calc_mae(event_info['observed_flow'], simulated),
+                    "pbias": calc_pbias(event_info['observed_flow'], simulated),
+                    "simulated": simulated,
+                    "observed": event_info['observed_flow'],
+                }
+                
+                if event_name not in all_results[file_name]:
+                    all_results[file_name][event_name] = []
+                all_results[file_name][event_name].append(event_result)
+                
+            except Exception as e:
+                st.write(f"  ❌ {file_name}/{event_name}/{model_name}: {e}")
+    
+    # 排序
+    for file_name in all_results:
+        for event_name in all_results[file_name]:
+            all_results[file_name][event_name].sort(key=lambda x: x["nse"], reverse=True)
     
     # ============================================================
     # 结果展示
@@ -343,7 +416,8 @@ if uploaded_files and len(uploaded_files) > 0:
             'HBV模型': '#2ecc71',      # 绿色
         }
         
-        n_events = len(all_flood_events)
+        # 计算总场次数
+        n_events = sum(len(file_results) for file_results in all_results.values())
         n_cols = min(2, n_events)
         n_rows = (n_events + n_cols - 1) // n_cols
         
