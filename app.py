@@ -242,10 +242,17 @@ if uploaded_files and len(uploaded_files) > 0:
         
         # 率定每场洪水
         for event in flood_events:
-            event_key = f"{uploaded_file.name}_{event.name}"
+            # 生成日期8位格式的场次名称
+            if hasattr(event.start_date, 'strftime'):
+                event_date_str = event.start_date.strftime('%Y%m%d')
+            else:
+                event_date_str = str(event.start_date)[:10].replace('-', '')
+            event_name = event_date_str
+            
+            event_key = f"{uploaded_file.name}_{event_name}"
             all_flood_events.append(event_key)
             
-            st.write(f"**📊 率定 {event.name}** ({event.start_date} ~ {event.end_date})")
+            st.write(f"**📊 率定 {event_name}** ({event.start_date} ~ {event.end_date})")
             
             def calibrate_event(event_obj, model_name):
                 try:
@@ -330,35 +337,41 @@ if uploaded_files and len(uploaded_files) > 0:
         st.divider()
         st.subheader("📉 流量过程线对比")
         
+        model_colors = {
+            '新安江模型': '#e74c3c',  # 红色
+            '水箱模型': '#3498db',     # 蓝色
+            'HBV模型': '#2ecc71',      # 绿色
+        }
+        
         n_events = len(all_flood_events)
         n_cols = min(2, n_events)
         n_rows = (n_events + n_cols - 1) // n_cols
         
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=(14, 5 * n_rows))
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(18, 4 * n_rows))
         if n_events == 1:
             axes = [axes]
         else:
             axes = axes.flatten() if n_rows > 1 else axes
-        
-        colors = ["#e74c3c", "#3498db", "#2ecc71"]
         
         for idx, (file_name, file_results) in enumerate(all_results.items()):
             if idx < len(axes):
                 ax = axes[idx]
                 
                 first_observed = None
-                for e_idx, (event_name, event_results) in enumerate(file_results.items()):
-                    for m_idx, r in enumerate(event_results):
+                for event_name, event_results in file_results.items():
+                    for r in event_results:
+                        color = model_colors.get(r['model_name'], '#999999')
                         label = f"{r['model_name']} (NSE={r['nse']:.2f})"
-                        ax.plot(r["simulated"], color=colors[m_idx % len(colors)], 
-                               label=label, linewidth=1, alpha=0.7)
+                        ax.plot(r["simulated"], color=color, 
+                               label=label, linewidth=2, alpha=0.8)
                         if first_observed is None:
                             first_observed = r["observed"]
                 
                 if first_observed is not None:
-                    ax.plot(first_observed, "k-", label="实测", linewidth=2)
+                    ax.plot(first_observed, "k-", label="实测", linewidth=2.5)
+                
                 ax.set_title(f"{file_name}")
-                ax.legend(fontsize=8, loc='upper right')
+                ax.legend(fontsize=9, loc='upper right')
                 ax.grid(True, alpha=0.3)
                 ax.set_xlabel("时间步")
                 ax.set_ylabel("流量 (m³/s)")
