@@ -250,19 +250,17 @@ if uploaded_files and len(uploaded_files) > 0:
         all_evap.extend(evap_arr.tolist())
         all_flow.extend(flow_arr.tolist())
         
-        with st.expander("查看数据"):
-            st.dataframe(clean_df.head(10))
+        st.write(f"✅ {uploaded_file.name}: {len(precip_arr)} 行 | {len(flood_events)} 场洪水")
     
     # 时间尺度确认
     st.divider()
     st.subheader("⏱️ 时间尺度确认")
     col1, col2 = st.columns([2, 1])
     with col1:
-        timestep_info = get_timestep_info(detected_timestep)
-        st.info(f"⏱️ {timestep_info['label']}")
+        st.info(f"检测到 **小时尺度**" if detected_timestep == 'hourly' else f"检测到 **日尺度**")
     with col2:
         user_timestep = st.radio(
-            "尺度",
+            "请选择",
             options=['hourly', 'daily'],
             index=0 if detected_timestep == 'hourly' else 1,
             horizontal=True,
