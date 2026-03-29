@@ -207,6 +207,7 @@ if uploaded_files and len(uploaded_files) > 0:
                             "mae": calc_mae(event.observed_flow, simulated),
                             "pbias": calc_pbias(event.observed_flow, simulated),
                             "simulated": simulated,
+                            "observed": event.observed_flow,
                         })
                         st.write(f"  ✅ {model_name}: NSE = {nse:.4f}")
             
@@ -274,17 +275,17 @@ if uploaded_files and len(uploaded_files) > 0:
             if idx < len(axes):
                 ax = axes[idx]
                 
-                first_event_results = None
+                first_observed = None
                 for e_idx, (event_name, event_results) in enumerate(file_results.items()):
-                    if first_event_results is None and event_results:
-                        first_event_results = event_results
                     for m_idx, r in enumerate(event_results):
                         label = f"{r['model_name']} (NSE={r['nse']:.2f})"
                         ax.plot(r["simulated"], color=colors[m_idx % len(colors)], 
                                label=label, linewidth=1, alpha=0.7)
+                        if first_observed is None:
+                            first_observed = r["observed"]
                 
-                if first_event_results:
-                    ax.plot(np.zeros_like(first_event_results[0]["simulated"]), "k-", label="实测", linewidth=2)
+                if first_observed is not None:
+                    ax.plot(first_observed, "k-", label="实测", linewidth=2)
                 ax.set_title(f"{file_name}")
                 ax.legend(fontsize=8, loc='upper right')
                 ax.grid(True, alpha=0.3)
