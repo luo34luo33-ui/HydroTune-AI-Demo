@@ -125,23 +125,30 @@ if uploaded_files and len(uploaded_files) > 0:
     all_flood_events = []
     report_sections = []
     
+    # ---- 读取并缓存所有文件数据 ----
+    file_dfs = []
+    for uploaded_file in uploaded_files:
+        try:
+            if uploaded_file.name.endswith(".csv"):
+                df = pd.read_csv(uploaded_file)
+            else:
+                df = pd.read_excel(uploaded_file)
+            file_dfs.append((uploaded_file.name, df))
+        except Exception as e:
+            st.error(f"读取 {uploaded_file.name} 失败: {e}")
+            continue
+    
+    if not file_dfs:
+        st.error("没有可用的文件")
+        st.stop()
+    
     # ---- 列名确认（第一个文件）----
     st.divider()
     st.subheader("📋 列名确认")
     
-    # 读取第一个文件显示列名
-    first_file = uploaded_files[0]
-    try:
-        if first_file.name.endswith(".csv"):
-            first_df = pd.read_csv(first_file)
-        else:
-            first_df = pd.read_excel(first_file)
-        st.write(f"**{first_file.name}** 的列名: `{list(first_df.columns)}`")
-    except Exception as e:
-        st.error(f"读取失败: {e}")
-        st.stop()
+    first_file_name, first_df = file_dfs[0]
+    st.write(f"**{first_file_name}** 的列名: `{list(first_df.columns)}`")
     
-    # 列名映射确认
     col_mapping_accepted = st.checkbox(
         f"使用列名映射: {column_mapping['date']}→date, {column_mapping['precip']}→precip, {column_mapping['evap']}→evap, {column_mapping['flow']}→flow",
         value=True
@@ -160,20 +167,11 @@ if uploaded_files and len(uploaded_files) > 0:
     detected_timestep = 'daily'
     user_timestep = 'daily'
     
-    for file_idx, uploaded_file in enumerate(uploaded_files):
+    for file_idx, (file_name, raw_df) in enumerate(file_dfs):
         st.divider()
-        st.subheader(f"📂 文件 {file_idx + 1}: {uploaded_file.name}")
+        st.subheader(f"📂 文件 {file_idx + 1}: {file_name}")
         
-        # 读取数据
-        try:
-            if uploaded_file.name.endswith(".csv"):
-                raw_df = pd.read_csv(uploaded_file)
-            else:
-                raw_df = pd.read_excel(uploaded_file)
-            st.write(f"✅ 读取成功，共 {raw_df.shape[0]} 行")
-        except Exception as e:
-            st.error(f"读取失败: {e}")
-            continue
+        st.write(f"✅ 读取成功，共 {raw_df.shape[0]} 行")
         
         # 使用用户配置的列名进行映射
         rename_map = {}
@@ -236,7 +234,7 @@ if uploaded_files and len(uploaded_files) > 0:
                 event_date_str = str(event.start_date)[:10].replace('-', '')
             
             all_file_events.append({
-                'file_name': uploaded_file.name,
+                'file_name': file_name,
                 'event_name': event_date_str,
                 'start_date': event.start_date,
                 'end_date': event.end_date,
@@ -259,8 +257,10 @@ if uploaded_files and len(uploaded_files) > 0:
     st.divider()
     st.subheader("⏱️ 时间尺度确认")
     
+    # 使用第一个文件的日期进行时间尺度检测
+    first_clean_df = file_dfs[0][1].fillna(0)
     with st.spinner("🔍 LLM 正在分析数据时间尺度..."):
-        detected_timestep = infer_timestep_by_llm(clean_df['date'], call_minimax)
+        detected_timestep = infer_timestep_by_llm(first_clean_df['date'], call_minimax)
     
     col1, col2 = st.columns([2, 1])
     with col1:
