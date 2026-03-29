@@ -12,6 +12,46 @@ from datetime import datetime
 # ============================================================
 # 时间尺度检测
 # ============================================================
+def infer_timestep_by_llm(dates: pd.Series, llm_caller: Callable = None) -> str:
+    """
+    使用 LLM 智能推断时间尺度
+    
+    Args:
+        dates: 日期序列
+        llm_caller: LLM 调用函数
+        
+    Returns:
+        'hourly' 或 'daily'
+    """
+    if llm_caller is None:
+        return infer_timestep(dates)
+    
+    try:
+        date_samples = dates.head(20).tolist()
+        date_samples_str = "\n".join([str(d) for d in date_samples])
+        
+        prompt = f"""请分析以下日期序列，判断这是小时尺度还是日尺度的数据：
+
+{date_samples_str}
+... (共 {len(dates)} 条记录)
+
+请直接输出：hourly 或 daily，不要输出其他内容。
+"""
+        
+        result = llm_caller(prompt)
+        result = result.strip().lower()
+        
+        if 'hourly' in result:
+            return 'hourly'
+        elif 'daily' in result:
+            return 'daily'
+        else:
+            return infer_timestep(dates)
+            
+    except Exception:
+        return infer_timestep(dates)
+
+
 def infer_timestep(dates: pd.Series) -> str:
     """
     从日期列推断时间尺度

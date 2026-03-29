@@ -13,7 +13,7 @@ from io import StringIO
 
 from src.llm_api import call_minimax
 from src.data_agent import (
-    clean_data_with_sandbox, infer_timestep, get_timestep_info,
+    clean_data_with_sandbox, infer_timestep, infer_timestep_by_llm, get_timestep_info,
     detect_flood_events, FloodEvent
 )
 from src.hydro_calc import (
@@ -255,9 +255,13 @@ if uploaded_files and len(uploaded_files) > 0:
         for f in uploaded_files:
             st.write(f"• {f.name}")
     
-    # 时间尺度确认
+    # 时间尺度确认（使用 LLM 智能检测）
     st.divider()
     st.subheader("⏱️ 时间尺度确认")
+    
+    with st.spinner("🔍 LLM 正在分析数据时间尺度..."):
+        detected_timestep = infer_timestep_by_llm(clean_df['date'], call_minimax)
+    
     col1, col2 = st.columns([2, 1])
     with col1:
         st.info(f"检测到 **小时尺度**" if detected_timestep == 'hourly' else f"检测到 **日尺度**")
