@@ -426,7 +426,7 @@ if uploaded_files and len(uploaded_files) > 0:
         n_cols = min(2, n_events)
         n_rows = (n_events + n_cols - 1) // n_cols
         
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=(18, 4 * n_rows))
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(18, 5 * n_rows))
         if n_events == 1:
             axes = [axes]
         else:
@@ -436,8 +436,17 @@ if uploaded_files and len(uploaded_files) > 0:
             if idx < len(axes):
                 ax = axes[idx]
                 
+                # 收集降水数据用于绘图
+                precip_data = None
                 first_observed = None
+                
                 for event_name, event_results in file_results.items():
+                    # 找到对应的降水数据
+                    for event_info in all_file_events:
+                        if event_info['file_name'] == file_name:
+                            precip_data = event_info['precip']
+                            break
+                    
                     for r in event_results:
                         color = model_colors.get(r['model_name'], '#999999')
                         label = f"{r['model_name']} (NSE={r['nse']:.2f})"
@@ -445,6 +454,14 @@ if uploaded_files and len(uploaded_files) > 0:
                                label=label, linewidth=2, alpha=0.8)
                         if first_observed is None:
                             first_observed = r["observed"]
+                
+                # 绘制降水柱状图（从上而下，浅蓝色，底层）
+                if precip_data is not None:
+                    ax2 = ax.twinx()
+                    ax2.bar(range(len(precip_data)), precip_data, color='#87CEEB', alpha=0.5, width=1, label='降水')
+                    ax2.set_ylabel("降水 (mm)", color='#87CEEB')
+                    ax2.tick_params(axis='y', labelcolor='#87CEEB')
+                    ax2.invert_yaxis()  # 从上而下
                 
                 if first_observed is not None:
                     ax.plot(first_observed, "k-", label="实测", linewidth=2.5)
@@ -460,6 +477,15 @@ if uploaded_files and len(uploaded_files) > 0:
         
         plt.tight_layout()
         st.pyplot(fig)
+        
+        # 保存图像按钮
+        col1, col2 = st.columns([1, 5])
+        with col1:
+            if st.button("💾 保存图像"):
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"flow_comparison_{timestamp}.png"
+                fig.savefig(filename, dpi=150, bbox_inches='tight')
+                st.success(f"✅ 图像已保存至: {filename}")
     
     # ============================================================
     # 智能分析报告
