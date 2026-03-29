@@ -72,7 +72,7 @@ with st.sidebar:
 
     upload_mode = st.radio(
         "上传模式",
-        options=["单文件（自动识别多场次）", "多文件（每文件一场洪水）"],
+        options=["单文件（整场洪水）", "多文件（每文件一场洪水）"],
         index=0,
         horizontal=True,
     )
