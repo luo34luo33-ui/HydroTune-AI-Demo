@@ -175,16 +175,16 @@ def calibrate_model_fast(
         except Exception:
             return 1e10
     
-    # 根据参数数量调整迭代次数
+    # 根据参数数量调整迭代次数（参数越多，迭代越慢）
     if n_params <= 5:
-        stage1_iter = max(3, max_iter // 3)
-        stage2_iter = max(10, max_iter * 2)
-    elif n_params <= 10:
         stage1_iter = max(5, max_iter // 2)
-        stage2_iter = max(20, max_iter)
+        stage2_iter = max(20, max_iter * 3)
+    elif n_params <= 10:
+        stage1_iter = max(8, max_iter)
+        stage2_iter = max(30, max_iter * 2)
     else:
-        stage1_iter = max(3, max_iter // 3)
-        stage2_iter = max(10, max_iter)
+        stage1_iter = max(5, max_iter // 2)
+        stage2_iter = max(15, max_iter)
     
     # 阶段1: dual_annealing 全局搜索
     result1 = dual_annealing(
