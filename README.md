@@ -1,6 +1,6 @@
-# Hydromind-Demo
+# HydroTune-AI
 
-水文模型智能率定系统，支持多模型集成、多场次洪水率定、参数优化与智能报告。
+水文模型智能率定系统，支持多模型集成、多场次洪水率定、数据预分析、参数优化与智能报告。
 
 ## 主要特性
 
@@ -8,7 +8,21 @@
 - **多场次率定**：自动识别洪水场次，支持多文件批量处理
 - **智能清洗**：LLM 驱动的数据自动清洗与格式标准化
 - **时间尺度适配**：支持日尺度和小时尺度数据
+- **数据预分析**：自动数据质量评估、洪水事件识别、Pearson III频率分析、代表性洪水选取
 - **智能报告**：自动生成专业分析报告，支持 Markdown 导出
+
+## 工作流程
+
+```
+上传数据 → 列名映射 → 时间尺度检测 → 数据预分析 → 模型率定 → 智能报告
+```
+
+### 数据预分析
+
+1. **数据质量评估**：完整率、连续性、降水-径流相关性、极值检测
+2. **洪水事件识别**：基于斜率变化的自动洪水场次识别
+3. **频率分析**：Pearson III型曲线拟合，设计洪水计算
+4. **代表性选取**：多准则智能选取5场代表性洪水用于率定
 
 ## 模型推荐
 
@@ -94,7 +108,7 @@ streamlit run app.py
 ## 项目结构
 
 ```
-Hydromind-Demo/
+HydroTune-AI/
 ├── src/
 │   ├── models/                 # 模型接口层
 │   │   ├── base_model.py      # 抽象基类
@@ -105,10 +119,12 @@ Hydromind-Demo/
 │   │   └── model_xaj.py       # 新安江模型适配器
 │   ├── hydro_calc.py          # 水文计算与率定
 │   ├── data_agent.py          # 数据清洗与场次识别
+│   ├── data_preanalysis.py    # 数据预分析模块
+│   ├── llm_reporter.py        # LLM报告生成模块
 │   └── llm_api.py             # LLM接口
 ├── tank-model-structured/     # Tank模型源码
-├── HBV_model_structured/     # HBV模型源码
-├── XAJ-model-structured/      # 新安江模型源码
+├── HBV_model_structured/       # HBV模型源码
+├── XAJ-model-structured/       # 新安江模型源码
 └── demo_data/                 # 示例数据
 ```
 
@@ -123,7 +139,7 @@ Hydromind-Demo/
 
 默认流域面积：**150.7944 km²**
 
-可在上传数据后根据实际情况调整。
+可在侧边栏根据实际情况调整。
 
 ## 添加新模型
 

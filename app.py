@@ -1,5 +1,5 @@
 """
-Hydromind-Demo 流域水文模型智能率定系统
+HydroTune-AI 流域水文模型智能率定系统
 Streamlit 主入口
 """
 import streamlit as st
@@ -35,7 +35,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # 页面配置
 # ============================================================
 st.set_page_config(
-    page_title="Hydromind - 流域水文模型智能率定系统",
+    page_title="HydroTune-AI - 流域水文模型智能率定系统",
     page_icon="🌊",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -48,7 +48,7 @@ plt.rcParams["axes.unicode_minus"] = False
 # ============================================================
 # 标题区域
 # ============================================================
-st.title("Hydromind - 流域水文模型智能率定系统")
+st.title("HydroTune-AI - 流域水文模型智能率定系统")
 st.caption("上传数据 → 智能清洗 → 多模型率定 → 自动报告")
 
 # ============================================================
@@ -225,7 +225,7 @@ if not uploaded_files:
     # Hero Section
     st.markdown("""
     <div class="hero-section">
-        <div class="hero-title">🌊 Hydromind</div>
+        <div class="hero-title">🌊 HydroTune-AI</div>
         <div class="hero-subtitle">流域水文模型智能率定系统</div>
         <div style="margin-top: 20px;">
             <span class="tech-badge">🤖 LLM 智能分析</span>
@@ -345,7 +345,7 @@ if not uploaded_files:
         """)
     
     st.markdown("<br>", unsafe_allow_html=True)
-    st.info("👈 请在左侧上传水文数据文件开始使用 Hydromind")
+    st.info("👈 请在左侧上传水文数据文件开始使用 HydroTune-AI")
 
 # ============================================================
 # 主流程

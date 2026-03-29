@@ -1,6 +1,6 @@
 """
 HBV水文模型适配器
-将 HBV_model_structured 项目适配到 Hydromind-Demo 的统一接口
+将 HBV_model_structured 项目适配到 HydroTune-AI 的统一接口
 """
 import sys
 from pathlib import Path

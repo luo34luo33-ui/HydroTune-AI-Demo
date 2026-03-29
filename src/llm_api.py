@@ -59,15 +59,15 @@ def call_minimax(prompt: str, system_prompt: str = "") -> str:
         "stream": False,
         "reply_constraints": {
             "sender_type": "BOT",
-            "sender_name": "Hydromind"
+            "sender_name": "HydroTune-AI"
         },
         "sample_messages": [],
         "plugins": [],
         "messages": messages,
         "bot_setting": [
             {
-                "bot_name": "Hydromind",
-                "content": "你是Hydromind，一个专业的水文模型智能助手。你擅长分析水文数据、解释水文模型参数、生成专业的水文分析报告。"
+                "bot_name": "HydroTune-AI",
+                "content": "你是HydroTune-AI，一个专业的水文模型智能助手。你擅长分析水文数据、解释水文模型参数、生成专业的水文分析报告。"
             }
         ],
     }

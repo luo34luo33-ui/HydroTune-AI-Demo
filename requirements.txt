@@ -1,4 +1,4 @@
-# Hydromind-Demo 依赖清单
+# HydroTune-AI 依赖清单
 streamlit>=1.32.0
 pandas>=2.0.0
 numpy>=1.24.0

@@ -1,6 +1,6 @@
 """
 新安江模型 (XAJ) 适配器
-将 XAJ-model-structured 项目适配到 Hydromind-Demo 的统一接口
+将 XAJ-model-structured 项目适配到 HydroTune-AI 的统一接口
 """
 import sys
 import importlib.util
@@ -108,28 +108,42 @@ class XAJModel(BaseModel):
         """
         if not XAJ_AVAILABLE:
             # 返回默认参数范围（当XAJ不可用时）
-            # 扩大了产流相关参数的范围，提高模拟灵活性
+            # 注意：ki + kg 必须 < 1，否则模型运行失败
             return {
                 'k': (0.5, 1.5),
-                'b': (0.1, 0.8),        # 扩大上限
-                'im': (0.0, 0.15),      # 扩大上限
-                'um': (10.0, 60.0),     # 扩大上限
-                'lm': (50.0, 150.0),    # 扩大上限
-                'dm': (40.0, 120.0),    # 扩大上限
-                'c': (0.1, 0.5),        # 扩大上限
-                'sm': (10.0, 80.0),     # 扩大上限
-                'ex': (1.0, 3.0),       # 扩大上限
-                'ki': (0.1, 0.7),      # 扩大上限 - 壤中流
-                'kg': (0.2, 0.7),      # 扩大上限 - 地下水
-                'cs': (0.5, 0.98),      # 扩大上限
-                'l': (0, 20),           # 扩大上限
-                'ci': (0.5, 0.98),     # 扩大上限
+                'b': (0.1, 0.8),
+                'im': (0.0, 0.15),
+                'um': (10.0, 60.0),
+                'lm': (50.0, 150.0),
+                'dm': (40.0, 120.0),
+                'c': (0.1, 0.5),
+                'sm': (10.0, 80.0),
+                'ex': (1.0, 3.0),
+                'ki': (0.05, 0.45),      # 确保 ki + kg < 0.9
+                'kg': (0.05, 0.45),     # 确保 ki + kg < 0.9
+                'cs': (0.5, 0.98),
+                'l': (0, 20),
+                'ci': (0.5, 0.98),
                 'cg': (0.9, 0.999),
             }
         
+        # XAJ 可用时，修改 PARAM_RANGES 确保约束
         return {
-            name: (range_info['min'], range_info['max'])
-            for name, range_info in PARAM_RANGES.items()
+            'k': (0.5, 1.5),
+            'b': (0.1, 0.8),
+            'im': (0.0, 0.15),
+            'um': (10.0, 60.0),
+            'lm': (50.0, 150.0),
+            'dm': (40.0, 120.0),
+            'c': (0.1, 0.5),
+            'sm': (10.0, 80.0),
+            'ex': (1.0, 3.0),
+            'ki': (0.05, 0.45),         # 修改：确保 ki + kg < 0.9
+            'kg': (0.05, 0.45),         # 修改：确保 ki + kg < 0.9
+            'cs': (0.5, 0.98),
+            'l': (0, 20),
+            'ci': (0.5, 0.98),
+            'cg': (0.9, 0.999),
         }
 
     @property
@@ -206,7 +220,10 @@ class XAJModel(BaseModel):
         """
         验证参数是否有效
         
-        新安江模型特殊约束：ki + kg < 1
+        新安江模型特殊约束：
+        - ki + kg < 1
+        - w0 = 0.6 * (um + lm + dm) < (um + lm + dm) = wm
+        - b > 0 (保证指数计算有效)
         """
         # 基础范围检查
         if not super().validate_params(params):
@@ -216,6 +233,9 @@ class XAJModel(BaseModel):
         if 'ki' in params and 'kg' in params:
             if params['ki'] + params['kg'] >= 1.0:
                 return False
+        
+        # 确保内部状态计算有效: w0 = 0.6*wm < wm
+        # 这总是成立的，只要 um, lm, dm > 0
         
         return True
 

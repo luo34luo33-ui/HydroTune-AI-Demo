@@ -1,6 +1,6 @@
 """
 Tank水箱模型适配器
-将 tank-model-structured 项目适配到 Hydromind-Demo 的统一接口
+将 tank-model-structured 项目适配到 HydroTune-AI 的统一接口
 """
 import importlib.util
 import types

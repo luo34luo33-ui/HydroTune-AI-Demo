@@ -166,6 +166,9 @@ def calibrate_model_fast(
     
     def objective(params_array):
         params = {k: v for k, v in zip(param_names, params_array)}
+        # 检查模型特定的参数约束
+        if hasattr(model, 'validate_params') and not model.validate_params(params):
+            return 1e10
         try:
             simulated = model.run(precip, evap, params, spatial_data, temperature)
             nse = calc_nse(observed_flow, simulated)
@@ -217,7 +220,11 @@ def calibrate_model_fast(
         best_nse = -result1.fun
     
     best_params = {k: v for k, v in zip(param_names, best_x)}
-    simulated = model.run(precip, evap, best_params, spatial_data, temperature)
+    try:
+        simulated = model.run(precip, evap, best_params, spatial_data, temperature)
+    except Exception:
+        simulated = np.full_like(observed_flow, np.nan)
+        best_nse = -1e10
     
     return best_params, best_nse, simulated
 
