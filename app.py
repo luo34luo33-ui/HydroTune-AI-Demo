@@ -79,6 +79,24 @@ with st.sidebar:
 
     st.divider()
 
+    # 列名配置
+    st.header("📋 列名配置")
+    with st.expander("配置数据列名映射"):
+        st.write("将原始列名映射到标准列名（date, precip, evap, flow）：")
+        date_col = st.text_input("时间列名", value="date", key="date_col")
+        precip_col = st.text_input("降水列名", value="precip", key="precip_col")
+        evap_col = st.text_input("蒸发列名（可选）", value="evap", key="evap_col")
+        flow_col = st.text_input("流量列名", value="flow", key="flow_col")
+    
+    column_mapping = {
+        'date': date_col if date_col else 'date',
+        'precip': precip_col if precip_col else 'precip',
+        'evap': evap_col if evap_col else 'evap',
+        'flow': flow_col if flow_col else 'flow',
+    }
+
+    st.divider()
+
     st.header("⚙️ 率定设置")
     max_iter = st.slider(
         "迭代次数",
@@ -107,6 +125,32 @@ if uploaded_files and len(uploaded_files) > 0:
     all_flood_events = []
     report_sections = []
     
+    # ---- 列名确认（第一个文件）----
+    st.divider()
+    st.subheader("📋 列名确认")
+    
+    # 读取第一个文件显示列名
+    first_file = uploaded_files[0]
+    try:
+        if first_file.name.endswith(".csv"):
+            first_df = pd.read_csv(first_file)
+        else:
+            first_df = pd.read_excel(first_file)
+        st.write(f"**{first_file.name}** 的列名: `{list(first_df.columns)}`")
+    except Exception as e:
+        st.error(f"读取失败: {e}")
+        st.stop()
+    
+    # 列名映射确认
+    col_mapping_accepted = st.checkbox(
+        f"使用列名映射: {column_mapping['date']}→date, {column_mapping['precip']}→precip, {column_mapping['evap']}→evap, {column_mapping['flow']}→flow",
+        value=True
+    )
+    
+    if not col_mapping_accepted:
+        st.warning("请先配置正确的列名映射")
+        st.stop()
+    
     # ---- 处理每个文件 ----
     for file_idx, uploaded_file in enumerate(uploaded_files):
         st.divider()
@@ -123,21 +167,34 @@ if uploaded_files and len(uploaded_files) > 0:
             st.error(f"读取失败: {e}")
             continue
         
-        # 数据清洗
-        with st.expander("🧠 数据清洗"):
-            try:
-                clean_df, detected_timestep = clean_data_with_sandbox(raw_df, call_minimax)
-                st.write("✅ 清洗完成")
-                st.dataframe(clean_df.head(10))
-            except Exception as e:
-                st.error(f"清洗失败: {e}")
-                continue
+        # 使用用户配置的列名进行映射
+        rename_map = {}
+        for std_name, orig_name in column_mapping.items():
+            if orig_name and orig_name in raw_df.columns:
+                rename_map[orig_name] = std_name
         
-        if "precip" not in clean_df.columns or "flow" not in clean_df.columns:
-            st.error("缺少必要列")
+        if rename_map:
+            raw_df = raw_df.rename(columns=rename_map)
+        
+        # 确保必要列存在
+        if 'precip' not in raw_df.columns or 'flow' not in raw_df.columns:
+            st.error(f"缺少必要列。当前列: {list(raw_df.columns)}")
             continue
         
-        clean_df = clean_df.fillna(0)
+        if 'evap' not in raw_df.columns:
+            raw_df['evap'] = 0.0
+        
+        if 'date' not in raw_df.columns:
+            raw_df['date'] = range(len(raw_df))
+        
+        clean_df = raw_df.fillna(0)
+        
+        # 检测时间尺度
+        detected_timestep = infer_timestep(clean_df['date'])
+        
+        st.write("✅ 列名映射完成")
+        with st.expander("查看清洗后数据"):
+            st.dataframe(clean_df.head(10))
         
         # 时间尺度确认
         col1, col2 = st.columns([2, 1])
