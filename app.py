@@ -257,8 +257,17 @@ if uploaded_files and len(uploaded_files) > 0:
     st.divider()
     st.subheader("⏱️ 时间尺度确认")
     
-    # 使用第一个文件的日期进行时间尺度检测
-    first_clean_df = file_dfs[0][1].fillna(0)
+    # 应用列名映射到第一个文件
+    first_file_name, first_raw_df = file_dfs[0]
+    rename_map_first = {}
+    for std_name, orig_name in column_mapping.items():
+        if orig_name and orig_name in first_raw_df.columns:
+            rename_map_first[orig_name] = std_name
+    first_clean_df = first_raw_df.rename(columns=rename_map_first)
+    if 'date' not in first_clean_df.columns:
+        first_clean_df['date'] = range(len(first_clean_df))
+    first_clean_df = first_clean_df.fillna(0)
+    
     with st.spinner("🔍 LLM 正在分析数据时间尺度..."):
         detected_timestep = infer_timestep_by_llm(first_clean_df['date'], call_minimax)
     
