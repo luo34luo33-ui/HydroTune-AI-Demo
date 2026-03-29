@@ -51,12 +51,24 @@ SKIP_MODELS = ['Tank水箱模型', 'HBV模型(完整版)']
 
 with st.sidebar:
     st.header("📁 数据上传")
-    uploaded_files = st.file_uploader(
-        "上传水文数据文件（支持多个文件）",
-        type=["csv", "xlsx", "xls"],
-        accept_multiple_files=True,
-        help="支持多文件上传，每个文件对应一场洪水",
-    )
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        uploaded_files = st.file_uploader(
+            "上传水文数据文件",
+            type=["csv", "xlsx", "xls"],
+            accept_multiple_files=True,
+            help="支持多文件上传",
+        )
+    with col2:
+        catchment_area = st.number_input(
+            "流域面积",
+            min_value=0.1,
+            max_value=100000.0,
+            value=150.7944,
+            step=1.0,
+            format="%.4f",
+            help="单位：km²",
+        )
 
     upload_mode = st.radio(
         "上传模式",
@@ -180,12 +192,14 @@ if uploaded_files and len(uploaded_files) > 0:
             
             def calibrate_event(event_obj, model_name):
                 try:
+                    spatial_data = {'area': catchment_area}
                     return calibrate_model_fast(
                         model_name,
                         event_obj.precip,
                         event_obj.evap,
                         event_obj.observed_flow,
                         max_iter=max_iter,
+                        spatial_data=spatial_data,
                         timestep=user_timestep
                     )
                 except Exception as e:
