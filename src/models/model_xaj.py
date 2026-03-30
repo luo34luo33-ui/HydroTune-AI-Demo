@@ -10,19 +10,27 @@ from typing import Dict, Tuple, Optional
 import numpy as np
 
 def _find_xaj_path():
-    """查找 XAJ-model-structured 目录的可用路径"""
-    possible_paths = [
-        Path(__file__).parent.parent.parent / "XAJ-model-structured",
-        Path(__file__).parent.parent / "XAJ-model-structured",
-        Path.cwd() / "XAJ-model-structured",
-        Path("/mount/src/hydrotune-ai-demo/XAJ-model-structured"),
-        Path("/mount/src/hydrotune-ai-demo/src/../XAJ-model-structured"),
+    """查找 XAJ-model-structured 目录的可用路径
+    
+    使用绝对路径确保在各种环境下都能正确定位
+    """
+    current_file = os.path.abspath(__file__)
+    current_dir = os.path.dirname(current_file)
+    
+    possible_roots = [
+        os.path.dirname(os.path.dirname(current_dir)),
+        os.path.dirname(current_dir),
+        os.getcwd(),
+        "/mount/src/hydrotune-ai-demo",
+        "/app",
     ]
     
-    for p in possible_paths:
-        full_path = p.resolve()
-        if full_path.exists() and (full_path / "config.py").exists():
-            return full_path
+    for root in possible_roots:
+        xaj_path = os.path.join(root, "XAJ-model-structured")
+        config_path = os.path.join(xaj_path, "config.py")
+        if os.path.exists(xaj_path) and os.path.exists(config_path):
+            return os.path.abspath(xaj_path)
+    
     return None
 
 _xaj_base_path = _find_xaj_path()

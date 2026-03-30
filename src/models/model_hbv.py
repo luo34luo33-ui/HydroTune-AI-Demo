@@ -3,11 +3,29 @@ HBV水文模型适配器
 将 HBV_model_structured 项目适配到 HydroTune-AI 的统一接口
 """
 import sys
+import os
 from pathlib import Path
 from typing import Dict, Tuple, Optional
 import numpy as np
 
-_hbv_base_path = Path(__file__).parent.parent.parent / "HBV_model_structured"
+def _get_base_path(folder_name):
+    """根据当前文件位置获取项目根目录下的子模块路径"""
+    current_file = os.path.abspath(__file__)
+    current_dir = os.path.dirname(current_file)
+    possible_roots = [
+        os.path.dirname(os.path.dirname(current_dir)),
+        os.path.dirname(current_dir),
+        os.getcwd(),
+        "/mount/src/hydrotune-ai-demo",
+        "/app",
+    ]
+    for root in possible_roots:
+        path = os.path.join(root, folder_name)
+        if os.path.exists(path):
+            return os.path.abspath(path)
+    return None
+
+_hbv_base_path = _get_base_path("HBV_model_structured")
 
 def _import_hbv_module():
     """动态导入HBV模型模块，临时添加sys.path并清理缓存"""

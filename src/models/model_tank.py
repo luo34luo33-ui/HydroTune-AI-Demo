@@ -4,11 +4,29 @@ Tank水箱模型适配器
 """
 import importlib.util
 import types
+import os
 from pathlib import Path
 from typing import Dict, Tuple, Optional
 import numpy as np
 
-_tank_base_path = Path(__file__).parent.parent.parent / "tank-model-structured"
+def _get_base_path(folder_name):
+    """根据当前文件位置获取项目根目录下的子模块路径"""
+    current_file = os.path.abspath(__file__)
+    current_dir = os.path.dirname(current_file)
+    possible_roots = [
+        os.path.dirname(os.path.dirname(current_dir)),
+        os.path.dirname(current_dir),
+        os.getcwd(),
+        "/mount/src/hydrotune-ai-demo",
+        "/app",
+    ]
+    for root in possible_roots:
+        path = os.path.join(root, folder_name)
+        if os.path.exists(path):
+            return os.path.abspath(path)
+    return None
+
+_tank_base_path = _get_base_path("tank-model-structured")
 
 def _import_tank_module():
     """动态导入Tank模型模块，避免sys.path污染"""
