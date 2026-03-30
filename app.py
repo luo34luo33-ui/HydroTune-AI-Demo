@@ -46,6 +46,173 @@ plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "Arial Unicode M
 plt.rcParams["axes.unicode_minus"] = False
 
 # ============================================================
+# 页面状态初始化
+# ============================================================
+if 'current_page' not in st.session_state:
+    st.session_state.current_page = 'main'
+
+# ============================================================
+# 页面定义函数
+# ============================================================
+def show_models_page():
+    """水文模型介绍页面"""
+    st.markdown("""
+    <style>
+    .model-hero {
+        background: linear-gradient(135deg, #1e3a5f 0%, #0d1b2a 100%);
+        padding: 50px 40px;
+        border-radius: 20px;
+        text-align: center;
+        margin: 20px 0;
+        color: white;
+    }
+    .model-hero h1 {
+        font-size: 2.5em;
+        font-weight: 700;
+        margin-bottom: 15px;
+        color: white;
+    }
+    .model-hero p {
+        font-size: 1.2em;
+        color: rgba(255,255,255,0.8);
+    }
+    .model-detail-card {
+        background: white;
+        border-radius: 16px;
+        padding: 30px;
+        margin: 15px 0;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        border: 1px solid #e2e8f0;
+    }
+    .model-header {
+        display: flex;
+        align-items: center;
+        margin-bottom: 20px;
+    }
+    .model-icon {
+        font-size: 3em;
+        margin-right: 20px;
+    }
+    .model-title {
+        font-size: 1.8em;
+        font-weight: 700;
+        color: #1e293b;
+    }
+    .param-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 15px 0;
+    }
+    .param-table th {
+        background: #f1f5f9;
+        padding: 12px 15px;
+        text-align: left;
+        font-weight: 600;
+        color: #475569;
+        border-bottom: 2px solid #e2e8f0;
+    }
+    .param-table td {
+        padding: 10px 15px;
+        border-bottom: 1px solid #f1f5f9;
+        color: #64748b;
+    }
+    .param-table tr:hover {
+        background: #f8fafc;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div class="model-hero">
+        <h1>🌊 水文模型介绍</h1>
+        <p>概念性水文模型是模拟流域水文过程的重要工具</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if st.button("← 返回主页", use_container_width=True):
+        st.session_state.current_page = 'main'
+        st.rerun()
+    
+    st.divider()
+    
+    st.markdown("""
+    <div class="model-detail-card">
+        <div class="model-header">
+            <span class="model-icon">🏗️</span>
+            <span class="model-title">水箱模型 (Tank Model)</span>
+        </div>
+        <p style="color: #64748b; line-height: 1.8;">
+            水箱模型是由日本学者菅原提出的一种概念性水文模型。该模型将流域的调蓄作用抽象为若干个串联或并联的水箱，模拟降雨-径流转换过程。模型结构简单，参数少，适用性广。
+        </p>
+        <h4 style="color: #1e293b; margin-top: 20px;">模型参数</h4>
+        <table class="param-table">
+            <tr><th>参数</th><th>含义</th><th>单位</th><th>典型范围</th></tr>
+            <tr><td><b>k1</b></td><td>快速流调蓄系数</td><td>-</td><td>0.01 ~ 0.3</td></tr>
+            <tr><td><b>k2</b></td><td>慢速流调蓄系数（基流）</td><td>-</td><td>0.001 ~ 0.05</td></tr>
+            <tr><td><b>c</b></td><td>产流系数</td><td>-</td><td>0.01 ~ 0.3</td></tr>
+        </table>
+        <h4 style="color: #1e293b; margin-top: 20px;">适用场景</h4>
+        <p style="color: #64748b;">通用流域模拟，尤其适用于数据较少或需要快速分析的流域。</p>
+    </div>
+    
+    <div class="model-detail-card">
+        <div class="model-header">
+            <span class="model-icon">🏔️</span>
+            <span class="model-title">HBV模型</span>
+        </div>
+        <p style="color: #64748b; line-height: 1.8;">
+            HBV模型是由瑞典气象水文研究所(SMHI)开发的概念性水文模型。模型包含土壤含水量计算、蒸散发计算、径流生成和汇流四个模块，广泛应用于北欧和世界各地的流域模拟。
+        </p>
+        <h4 style="color: #1e293b; margin-top: 20px;">模型参数</h4>
+        <table class="param-table">
+            <tr><th>参数</th><th>含义</th><th>单位</th><th>典型范围</th></tr>
+            <tr><td><b>fc</b></td><td>田间持水量</td><td>mm</td><td>50 ~ 500</td></tr>
+            <tr><td><b>beta</b></td><td>形状参数</td><td>-</td><td>1.0 ~ 5.0</td></tr>
+            <tr><td><b>k0</b></td><td>快速出流系数</td><td>-</td><td>0.01 ~ 0.5</td></tr>
+            <tr><td><b>k1</b></td><td>慢速出流系数</td><td>-</td><td>0.001 ~ 0.1</td></tr>
+            <tr><td><b>lp</b></td><td>蒸散发限制系数</td><td>-</td><td>0.3 ~ 1.0</td></tr>
+        </table>
+        <h4 style="color: #1e293b; margin-top: 20px;">适用场景</h4>
+        <p style="color: #64748b;">湿润半湿润地区流域，尤其适用于北欧、北美等地区的流域。</p>
+    </div>
+    
+    <div class="model-detail-card">
+        <div class="model-header">
+            <span class="model-icon">🌊</span>
+            <span class="model-title">新安江模型 (XAJ)</span>
+        </div>
+        <p style="color: #64748b; line-height: 1.8;">
+            新安江模型是我国水文学家赵人俊等在1980年代提出的三水源概念性水文模型。该模型基于蓄满产流机制，将径流划分为地表径流、壤中流和地下水径流三种水源，是我国湿润地区应用最广泛的流域水文模型。
+        </p>
+        <h4 style="color: #1e293b; margin-top: 20px;">模型参数</h4>
+        <table class="param-table">
+            <tr><th>参数</th><th>含义</th><th>单位</th><th>典型范围</th></tr>
+            <tr><td><b>k</b></td><td>蒸散发系数</td><td>-</td><td>0.5 ~ 1.5</td></tr>
+            <tr><td><b>b</b></td><td>蓄水容量曲线指数</td><td>-</td><td>0.1 ~ 0.5</td></tr>
+            <tr><td><b>im</b></td><td>不透水面积比例</td><td>-</td><td>0.01 ~ 0.1</td></tr>
+            <tr><td><b>um</b></td><td>上层土壤蓄水容量</td><td>mm</td><td>10 ~ 50</td></tr>
+            <tr><td><b>lm</b></td><td>下层土壤蓄水容量</td><td>mm</td><td>50 ~ 150</td></tr>
+            <tr><td><b>dm</b></td><td>深层土壤蓄水容量</td><td>mm</td><td>10 ~ 100</td></tr>
+            <tr><td><b>c</b></td><td>深层蒸散发系数</td><td>-</td><td>0.01 ~ 0.2</td></tr>
+            <tr><td><b>sm</b></td><td>自由水蓄水容量</td><td>mm</td><td>10 ~ 80</td></tr>
+            <tr><td><b>ex</b></td><td>自由水容量曲线指数</td><td>-</td><td>1.0 ~ 2.0</td></tr>
+            <tr><td><b>ki</b></td><td>壤中流出流系数</td><td>-</td><td>0.3 ~ 0.7</td></tr>
+            <tr><td><b>kg</b></td><td>地下水出流系数</td><td>-</td><td>0.01 ~ 0.2</td></tr>
+            <tr><td><b>cs</b></td><td>流域汇流系数</td><td>-</td><td>0.1 ~ 0.5</td></tr>
+            <tr><td><b>l</b></td><td>滞后时间</td><td>h</td><td>0 ~ 24</td></tr>
+            <tr><td><b>xg</b></td><td>地下水消退系数</td><td>-</td><td>0.9 ~ 0.999</td></tr>
+        </table>
+        <h4 style="color: #1e293b; margin-top: 20px;">适用场景</h4>
+        <p style="color: #64748b;">中国湿润地区流域，特别是长江、珠江、淮河等流域。</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.divider()
+    if st.button("← 返回主页", use_container_width=True):
+        st.session_state.current_page = 'main'
+        st.rerun()
+
+# ============================================================
 # 标题区域
 # ============================================================
 st.title("HydroTune-AI - 流域水文模型智能率定系统")
@@ -61,6 +228,13 @@ with st.sidebar:
     st.markdown("### 🤖 AI Agent 状态")
     agent_status = st.empty()
     agent_status.success("🟢 智能Agent就绪")
+    
+    st.divider()
+    st.markdown("### 📂 导航")
+    if st.button("🏠 主页", use_container_width=True):
+        st.session_state.current_page = 'main'
+    if st.button("📚 水文模型介绍", use_container_width=True):
+        st.session_state.current_page = 'models'
     
     st.divider()
     st.header("📁 数据上传")
@@ -136,110 +310,187 @@ with st.sidebar:
 # ============================================================
 # 欢迎页面
 # ============================================================
-if not uploaded_files:
+if st.session_state.current_page == 'models':
+    show_models_page()
+elif not uploaded_files:
     st.markdown("""
     <style>
     .hero-section {
-        background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
-        padding: 40px;
+        background: linear-gradient(135deg, #0a1628 0%, #1a365d 50%, #0f4c75 100%);
+        padding: 50px 40px;
         border-radius: 20px;
         margin: 20px 0;
         text-align: center;
         position: relative;
         overflow: hidden;
+        border: 1px solid rgba(255,255,255,0.1);
     }
     .hero-section::before {
         content: '';
         position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%239C92AC' fill-opacity='0.1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
-        opacity: 0.5;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(circle, rgba(59,130,246,0.1) 0%, transparent 50%);
+        animation: pulse 8s ease-in-out infinite;
+    }
+    @keyframes pulse {
+        0%, 100% { transform: scale(1); opacity: 0.5; }
+        50% { transform: scale(1.1); opacity: 0.8; }
     }
     .hero-title {
-        font-size: 3em;
+        font-size: 4em;
         color: white;
-        margin-bottom: 10px;
-        font-weight: bold;
-        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        margin-bottom: 15px;
+        font-weight: 800;
+        letter-spacing: 2px;
+        text-shadow: 0 0 30px rgba(59,130,246,0.5);
+        position: relative;
     }
     .hero-subtitle {
-        font-size: 1.3em;
-        color: rgba(255,255,255,0.9);
-        margin-bottom: 20px;
-    }
-    .feature-card {
-        background: rgba(255,255,255,0.95);
-        border-radius: 15px;
-        padding: 25px;
-        text-align: center;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-        transition: transform 0.3s, box-shadow 0.3s;
-        height: 100%;
-    }
-    .feature-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 15px 40px rgba(0,0,0,0.15);
-    }
-    .feature-icon {
-        font-size: 2.5em;
-        margin-bottom: 15px;
-    }
-    .feature-title {
-        font-size: 1.2em;
-        color: #2c3e50;
-        font-weight: bold;
-        margin-bottom: 15px;
-    }
-    .feature-desc {
-        color: #666;
-        font-size: 0.95em;
-        line-height: 1.6;
+        font-size: 1.5em;
+        color: rgba(255,255,255,0.85);
+        margin-bottom: 25px;
+        font-weight: 300;
+        letter-spacing: 1px;
     }
     .tech-badge {
         display: inline-block;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, rgba(59,130,246,0.8) 0%, rgba(99,102,241,0.8) 100%);
         color: white;
-        padding: 5px 15px;
-        border-radius: 20px;
-        font-size: 0.85em;
-        margin: 3px;
+        padding: 8px 20px;
+        border-radius: 25px;
+        font-size: 0.9em;
+        margin: 5px;
+        border: 1px solid rgba(255,255,255,0.2);
+        backdrop-filter: blur(10px);
     }
-    .step-number {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    .feature-card {
+        background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+        border-radius: 16px;
+        padding: 30px;
+        text-align: center;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.08);
+        transition: all 0.3s ease;
+        border: 1px solid rgba(0,0,0,0.05);
+        height: 100%;
+    }
+    .feature-card:hover {
+        transform: translateY(-8px);
+        box-shadow: 0 20px 50px rgba(59,130,246,0.15);
+        border-color: rgba(59,130,246,0.3);
+    }
+    .feature-icon {
+        font-size: 3em;
+        margin-bottom: 20px;
+        filter: drop-shadow(0 4px 8px rgba(0,0,0,0.1));
+    }
+    .feature-title {
+        font-size: 1.3em;
+        color: #1e293b;
+        font-weight: 700;
+        margin-bottom: 12px;
+    }
+    .feature-desc {
+        color: #64748b;
+        font-size: 0.95em;
+        line-height: 1.7;
+    }
+    .model-card {
+        background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
+        border-radius: 16px;
+        padding: 25px;
         color: white;
-        width: 30px;
-        height: 30px;
+        text-align: center;
+        border: 1px solid rgba(255,255,255,0.1);
+        transition: all 0.3s ease;
+    }
+    .model-card:hover {
+        transform: scale(1.03);
+        border-color: rgba(59,130,246,0.5);
+        box-shadow: 0 0 30px rgba(59,130,246,0.3);
+    }
+    .model-name {
+        font-size: 1.2em;
+        font-weight: 700;
+        margin-bottom: 8px;
+        color: #60a5fa;
+    }
+    .model-desc {
+        font-size: 0.9em;
+        color: rgba(255,255,255,0.7);
+    }
+    .nav-btn {
+        display: inline-block;
+        background: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%);
+        color: white;
+        padding: 12px 28px;
+        border-radius: 30px;
+        font-weight: 600;
+        text-decoration: none;
+        transition: all 0.3s ease;
+        border: none;
+        cursor: pointer;
+        font-size: 1em;
+    }
+    .nav-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 30px rgba(59,130,246,0.4);
+    }
+    .step-item {
+        display: flex;
+        align-items: center;
+        padding: 12px 0;
+        border-bottom: 1px solid rgba(0,0,0,0.05);
+    }
+    .step-num {
+        width: 36px;
+        height: 36px;
+        background: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%);
+        color: white;
         border-radius: 50%;
-        display: inline-flex;
+        display: flex;
         align-items: center;
         justify-content: center;
-        font-weight: bold;
-        margin-right: 10px;
+        font-weight: 700;
+        margin-right: 15px;
+        flex-shrink: 0;
+    }
+    .step-text {
+        color: #334155;
+        font-size: 0.95em;
     }
     </style>
     """, unsafe_allow_html=True)
     
-    # Hero Section
     st.markdown("""
     <div class="hero-section">
-        <div class="hero-title">🌊 HydroTune-AI</div>
+        <div class="hero-title">HydroTune-AI</div>
         <div class="hero-subtitle">流域水文模型智能率定系统</div>
-        <div style="margin-top: 20px;">
-            <span class="tech-badge">🤖 LLM 智能分析</span>
-            <span class="tech-badge">📊 多模型融合</span>
-            <span class="tech-badge">🔬 频率分析</span>
-            <span class="tech-badge">📈 深度学习建议</span>
+        <div style="margin-top: 25px;">
+            <span class="tech-badge">AI-Driven</span>
+            <span class="tech-badge">Multi-Model</span>
+            <span class="tech-badge">Auto-Calibration</span>
+            <span class="tech-badge">Smart Analysis</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
     
+    col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1])
+    with col_btn2:
+        if st.button("📚 水文模型介绍", type="secondary", use_container_width=True):
+            st.session_state.current_page = 'models'
+            st.rerun()
+    
     st.divider()
     
-    # AI Features Section
-    st.subheader("🚀 AI 智能核心能力")
+    st.markdown("""
+    <div style="text-align: center; margin-bottom: 30px;">
+        <h2 style="color: #1e293b; font-weight: 700;">核心能力</h2>
+        <p style="color: #64748b;">AI-powered hydrological model calibration platform</p>
+    </div>
+    """, unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns(3)
     
@@ -249,11 +500,10 @@ if not uploaded_files:
             <div class="feature-icon">🧠</div>
             <div class="feature-title">智能数据认知</div>
             <div class="feature-desc">
-                <b>LLM 驱动的数据理解</b><br><br>
-                • 自动识别数据时间尺度（小时/日）<br>
-                • 智能分析数据质量与一致性<br>
-                • 识别异常值与数据缺失<br>
-                • 理解水文过程的物理意义
+                LLM 驱动的数据自动理解<br>
+                • 时间尺度智能识别<br>
+                • 数据质量评估<br>
+                • 异常值检测
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -262,13 +512,12 @@ if not uploaded_files:
         st.markdown("""
         <div class="feature-card">
             <div class="feature-icon">🔍</div>
-            <div class="feature-title">智能场次识别</div>
+            <div class="feature-title">洪水事件识别</div>
             <div class="feature-desc">
-                <b>自动化洪水事件分析</b><br><br>
-                • 基于斜率变化识别洪水起止<br>
-                • 自动计算峰型特征参数<br>
-                • 多准则代表性洪水选取<br>
-                • 峰现时间比精准分析
+                自动化洪水场次分析<br>
+                • 峰型特征提取<br>
+                • 代表性选取<br>
+                • 频率曲线拟合
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -276,73 +525,109 @@ if not uploaded_files:
     with col3:
         st.markdown("""
         <div class="feature-card">
-            <div class="feature-icon">📝</div>
-            <div class="feature-title">智能报告生成</div>
+            <div class="feature-icon">📊</div>
+            <div class="feature-title">多模型率定</div>
             <div class="feature-desc">
-                <b>专业级分析报告</b><br><br>
-                • Pearson III 频率曲线拟合<br>
-                • 设计洪水智能计算<br>
-                • 多模型对比分析<br>
-                • 深度学习改进建议
+                集成多种水文模型<br>
+                • 参数自动优化<br>
+                • 多目标评估<br>
+                • 结果对比分析
             </div>
         </div>
         """, unsafe_allow_html=True)
     
     st.divider()
     
-    # Models & Workflow
-    col1, col2 = st.columns([1, 1])
+    col_models, col_workflow = st.columns([1, 1])
     
-    with col1:
-        st.subheader("📊 支持的水文模型")
+    with col_models:
         st.markdown("""
-        | 模型 | 特点 | 适用场景 |
-        |------|------|----------|
-        | **水箱模型** | 简化双层调蓄 | 通用流域 |
-        | **HBV模型** | 概念性水文 | 湿润半湿润 |
-        | **新安江模型** | 三水源产流 | 中国湿润区 |
-        """)
+        <div style="text-align: center; margin-bottom: 20px;">
+            <h3 style="color: #1e293b;">支持的水文模型</h3>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        col_m1, col_m2, col_m3 = st.columns(3)
+        with col_m1:
+            st.markdown("""
+            <div class="model-card">
+                <div class="model-name">水箱模型</div>
+                <div class="model-desc">通用流域</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with col_m2:
+            st.markdown("""
+            <div class="model-card">
+                <div class="model-name">HBV模型</div>
+                <div class="model-desc">湿润半湿润</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with col_m3:
+            st.markdown("""
+            <div class="model-card">
+                <div class="model-name">新安江</div>
+                <div class="model-desc">中国湿润区</div>
+            </div>
+            """, unsafe_allow_html=True)
     
-    with col2:
-        st.subheader("📖 使用流程")
+    with col_workflow:
         st.markdown("""
-        <div style="line-height: 2.2;">
-            <span class="step-number">1</span>上传水文数据文件<br>
-            <span class="step-number">2</span>配置列名映射关系<br>
-            <span class="step-number">3</span>设置流域面积等参数<br>
-            <span class="step-number">4</span>启动智能分析流程<br>
-            <span class="step-number">5</span>查看结果导出报告
+        <div style="text-align: center; margin-bottom: 20px;">
+            <h3 style="color: #1e293b;">使用流程</h3>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("""
+        <div class="step-item">
+            <span class="step-num">1</span>
+            <span class="step-text">上传水文数据（CSV/Excel）</span>
+        </div>
+        <div class="step-item">
+            <span class="step-num">2</span>
+            <span class="step-text">配置列名映射</span>
+        </div>
+        <div class="step-item">
+            <span class="step-num">3</span>
+            <span class="step-text">设置流域参数</span>
+        </div>
+        <div class="step-item">
+            <span class="step-num">4</span>
+            <span class="step-text">启动智能分析</span>
+        </div>
+        <div class="step-item" style="border-bottom: none;">
+            <span class="step-num">5</span>
+            <span class="step-text">查看结果与报告</span>
         </div>
         """, unsafe_allow_html=True)
     
     st.divider()
     
-    # Data Format
-    st.subheader("📋 数据格式要求")
-    col1, col2 = st.columns([1, 1])
+    with st.expander("📋 数据格式要求", expanded=False):
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            st.markdown("""
+            **必需列：**
+            - 时间：`date`, `日期`
+            - 降水：`precip`, `降水`, `rainfall`
+            - 流量：`flow`, `流量`, `discharge`
+            
+            **可选列：**
+            - 蒸发：`evap`, `et`, `蒸发`
+            """)
+        with col2:
+            st.markdown("""
+            **支持格式：**
+            - CSV 文件
+            - Excel (.xlsx, .xls)
+            - 自动识别列名映射
+            - 多种时间格式兼容
+            """)
     
-    with col1:
-        st.markdown("""
-        **必需列：**
-        - 时间列：`date`, `time`, `日期`, `时间`
-        - 降水列：`precip`, `rainfall`, `p`, `降水`, `降雨`
-        - 流量列：`flow`, `discharge`, `q`, `流量`, `径流`
-        
-        **可选列：**
-        - 蒸发列：`evap`, `et`, `蒸发`
-        """)
-    
-    with col2:
-        st.markdown("""
-        **支持格式：**
-        - CSV 文件
-        - Excel 文件 (.xlsx, .xls)
-        
-        **数据要求：**
-        - 数值型数据
-        - 支持缺失值处理
-        - 自动时间尺度检测
-        """)
+    st.markdown("""
+    <div style="text-align: center; color: #94a3b8; padding: 30px 0; border-top: 1px solid #e2e8f0;">
+        <small>HydroTune-AI v1.0 | AI-Powered Hydrological Model Calibration</small>
+    </div>
+    """, unsafe_allow_html=True)
     
     st.markdown("<br>", unsafe_allow_html=True)
     st.info("👈 请在左侧上传水文数据文件开始使用 HydroTune-AI")
