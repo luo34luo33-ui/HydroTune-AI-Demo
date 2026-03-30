@@ -41,8 +41,16 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# 设置中文字体
-plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "Arial Unicode MS"]
+# 设置中文字体（兼容本地和云端）
+import matplotlib.font_manager as fm
+available_fonts = [f.name for f in fm.fontManager.ttflist]
+chinese_fonts = ["WenQuanYi Micro Hei", "WenQuanYi Zen Hei", "Noto Sans CJK SC", 
+                 "Source Han Sans SC", "Droid Sans Fallback", "AR PL UMing CN",
+                 "SimHei", "Microsoft YaHei", "Arial Unicode MS"]
+font_list = [f for f in chinese_fonts if f in available_fonts]
+if not font_list:
+    font_list = ["sans-serif"]
+plt.rcParams["font.sans-serif"] = font_list
 plt.rcParams["axes.unicode_minus"] = False
 
 # ============================================================
@@ -228,6 +236,17 @@ with st.sidebar:
     st.markdown("### 🤖 AI Agent 状态")
     agent_status = st.empty()
     agent_status.success("🟢 智能Agent就绪")
+    
+    # 模型加载状态检查
+    st.markdown("### 📊 模型状态")
+    from src.models.registry import ModelRegistry
+    all_models = ModelRegistry.list_models()
+    check_models = ['水箱模型', 'HBV模型', '新安江模型']
+    for model in check_models:
+        if model in all_models:
+            st.success(f"✅ {model}")
+        else:
+            st.error(f"❌ {model}")
     
     st.divider()
     st.markdown("### 📂 导航")

@@ -1,0 +1,12 @@
+[submodule "XAJ-model-structured"]
+	path = XAJ-model-structured
+	url = https://github.com/luo34luo33-ui/XAJ-model-structured.git
+	branch = main
+[submodule "HBV_model_structured"]
+	path = HBV_model_structured
+	url = https://github.com/luo34luo33-ui/HBV_model_structured.git
+	branch = main
+[submodule "tank-model-structured"]
+	path = tank-model-structured
+	url = https://github.com/luo34luo33-ui/tank-model-structured.git
+	branch = main
