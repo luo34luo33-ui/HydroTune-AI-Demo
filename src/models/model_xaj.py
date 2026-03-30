@@ -219,6 +219,11 @@ class XAJModel(BaseModel):
         Returns:
             模拟流量序列 (m³/s), shape: (n_timesteps,)
         """
+        global XAJ_AVAILABLE, run_new_xaj
+        
+        if not XAJ_AVAILABLE:
+            _import_xaj_module()
+            
         if not XAJ_AVAILABLE:
             raise RuntimeError(
                 "XAJ 模型不可用，请确保 XAJ-model-structured 目录存在且代码完整"
