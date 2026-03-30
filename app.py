@@ -1729,29 +1729,41 @@ if uploaded_files and len(uploaded_files) > 0:
                         param_df = generate_param_table(model_name, calib_result['params'])
                         st.dataframe(param_df, use_container_width=True, hide_index=True)
             
-            # 多文件模式AI报告
-            st.divider()
-            st.subheader("🤖 AI Agent 智能分析报告")
-            
-            with st.spinner("🤖 AI Agent 正在生成分析报告..."):
-                multifile_report = generate_multifile_report(
-                    file_data_list,
-                    calibration_results,
-                    file_simulation_results,
-                    call_minimax
-                )
-            st.markdown(multifile_report)
-            
-            if not multifile_report.startswith("[ERROR]"):
-                report_filename = f"multifile_report_{datetime.now().strftime('%Y%m%d_%H%M')}.md"
-                st.download_button(
-                    "📥 导出报告 (Markdown)",
-                    data=multifile_report,
-                    file_name=report_filename,
-                    mime="text/markdown"
-                )
-            
-            st.stop()  # 多文件模式完成
+            # AI报告（仅多文件模式）
+            if upload_mode == "多文件（每文件一场洪水）":
+                try:
+                    st.divider()
+                    st.subheader("🤖 AI Agent 智能分析报告")
+                    
+                    with st.spinner("🤖 AI Agent 正在生成分析报告..."):
+                        multifile_report = generate_multifile_report(
+                            file_data_list,
+                            calibration_results,
+                            file_simulation_results,
+                            call_minimax
+                        )
+                    st.markdown(multifile_report)
+                    
+                    if not multifile_report.startswith("[ERROR]"):
+                        report_filename = f"multifile_report_{datetime.now().strftime('%Y%m%d_%H%M')}.md"
+                        st.download_button(
+                            "📥 导出报告 (Markdown)",
+                            data=multifile_report,
+                            file_name=report_filename,
+                            mime="text/markdown"
+                        )
+                except NameError:
+                    pass
+                st.markdown(multifile_report)
+                
+                if not multifile_report.startswith("[ERROR]"):
+                    report_filename = f"multifile_report_{datetime.now().strftime('%Y%m%d_%H%M')}.md"
+                    st.download_button(
+                        "📥 导出报告 (Markdown)",
+                        data=multifile_report,
+                        file_name=report_filename,
+                        mime="text/markdown"
+                    )
 
 else:
     # 欢迎页面
