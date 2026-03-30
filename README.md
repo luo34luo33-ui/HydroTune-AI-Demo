@@ -55,6 +55,37 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+## 云端部署 (Streamlit Cloud)
+
+### 部署步骤
+
+1. **Fork 本仓库** 到你的 GitHub 账号
+
+2. **初始化子模块**：在部署前需要正确初始化子模块
+   ```bash
+   git submodule update --init --recursive
+   ```
+
+3. **在 Streamlit Cloud 部署**：
+   - 连接你的 GitHub 仓库
+   - 在 Advanced settings 中勾选 **"Include submodules"** 选项
+   - 部署主文件：`app.py`
+
+### 子模块说明
+
+本项目包含三个子模块：
+- `XAJ-model-structured` - 新安江模型源码
+- `HBV_model_structured` - HBV模型源码  
+- `tank-model-structured` - 水箱模型源码
+
+### 常见问题
+
+**Q: 新安江模型加载失败？**
+A: 确保在 Streamlit Cloud 部署时勾选了 "Include submodules" 选项。部署日志中会显示模型加载状态。
+
+**Q: 中文字体显示为方块？**
+A: 系统会自动检测可用的中文字体。Streamlit Cloud 环境中可能需要配置自定义字体。
+
 ### 数据格式
 
 上传的 CSV/Excel 文件需包含以下列（列名支持中英文）：

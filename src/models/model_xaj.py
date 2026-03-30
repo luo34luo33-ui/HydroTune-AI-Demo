@@ -4,16 +4,40 @@
 """
 import sys
 import importlib.util
+import os
 from pathlib import Path
 from typing import Dict, Tuple, Optional
 import numpy as np
 
-_xaj_base_path = Path(__file__).parent.parent.parent / "XAJ-model-structured"
+def _find_xaj_path():
+    """查找 XAJ-model-structured 目录的可用路径"""
+    possible_paths = [
+        Path(__file__).parent.parent.parent / "XAJ-model-structured",
+        Path(__file__).parent.parent / "XAJ-model-structured",
+        Path.cwd() / "XAJ-model-structured",
+        Path("/mount/src/hydrotune-ai-demo/XAJ-model-structured"),
+        Path("/mount/src/hydrotune-ai-demo/src/../XAJ-model-structured"),
+    ]
+    
+    for p in possible_paths:
+        full_path = p.resolve()
+        if full_path.exists() and (full_path / "config.py").exists():
+            return full_path
+    return None
+
+_xaj_base_path = _find_xaj_path()
 
 def _import_xaj_module():
     """动态导入XAJ模型模块，使用sys.path临时添加"""
     global DEFAULT_PARAMS, PARAM_RANGES, xaj_validate
     global run_new_xaj, prepare_parameters_for_model, XAJ_AVAILABLE
+    
+    if _xaj_base_path is None:
+        print(f"[WARN] XAJ 模型路径不存在: {list(Path('.').glob('*'))}")
+        XAJ_AVAILABLE = False
+        return
+    
+    print(f"[INFO] XAJ 模型路径: {_xaj_base_path}")
     
     saved_modules = {}
     for k in list(sys.modules.keys()):
@@ -21,9 +45,10 @@ def _import_xaj_module():
             if 'src' not in (getattr(sys.modules.get(k), '__file__', '') or ''):
                 saved_modules[k] = sys.modules.pop(k, None)
     
-    if str(_xaj_base_path) in sys.path:
-        sys.path.remove(str(_xaj_base_path))
-    sys.path.insert(0, str(_xaj_base_path))
+    xaj_str = str(_xaj_base_path)
+    if xaj_str in sys.path:
+        sys.path.remove(xaj_str)
+    sys.path.insert(0, xaj_str)
     
     try:
         from config import DEFAULT_PARAMS as _dp, PARAM_RANGES as _pr
@@ -37,17 +62,21 @@ def _import_xaj_module():
         prepare_parameters_for_model = _pp
         XAJ_AVAILABLE = True
         
-        sys.path.remove(str(_xaj_base_path))
+        if xaj_str in sys.path:
+            sys.path.remove(xaj_str)
+        print("[INFO] XAJ 模型加载成功")
     except Exception as e:
         print(f"[WARN] XAJ 模型导入失败: {e}")
+        import traceback
+        traceback.print_exc()
         XAJ_AVAILABLE = False
         DEFAULT_PARAMS = None
         PARAM_RANGES = None
         xaj_validate = None
         run_new_xaj = None
         prepare_parameters_for_model = None
-        if str(_xaj_base_path) in sys.path:
-            sys.path.remove(str(_xaj_base_path))
+        if xaj_str in sys.path:
+            sys.path.remove(xaj_str)
     finally:
         for k, v in saved_modules.items():
             if k not in sys.modules:
