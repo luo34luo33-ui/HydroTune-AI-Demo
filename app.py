@@ -127,9 +127,9 @@ def show_models_page():
         <h1>🌊 水文模型介绍</h1>
         <p>概念性水文模型是模拟流域水文过程的重要工具</p>
     </div>
-    """, unsafe_allow_html=True)
+    "    """, unsafe_allow_html=True)
     
-    if st.button("← 返回主页", use_container_width=True):
+    if st.button("← 返回主页", key="models_back_1", use_container_width=True):
         st.session_state.current_page = 'main'
         st.rerun()
     
@@ -208,7 +208,7 @@ def show_models_page():
     """, unsafe_allow_html=True)
     
     st.divider()
-    if st.button("← 返回主页", use_container_width=True):
+    if st.button("← 返回主页", key="models_back_2", use_container_width=True):
         st.session_state.current_page = 'main'
         st.rerun()
 
