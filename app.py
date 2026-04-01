@@ -1230,7 +1230,7 @@ if uploaded_files and len(uploaded_files) > 0:
             # 2. 随机选择1/3作为率定场次，2/3作为验证场次
             np.random.seed(42)
             n_files = len(file_data_list)
-            n_calib = max(1, n_files // 3)  # 至少1个
+            n_calib = max(1, n_files * 3 // 4)  # 3:1比例，即3/4用于率定
             indices = np.random.permutation(n_files)
             calib_indices = indices[:n_calib]
             valid_indices = indices[n_calib:]
@@ -1238,7 +1238,7 @@ if uploaded_files and len(uploaded_files) > 0:
             calib_files = [file_data_list[i] for i in calib_indices]
             valid_files = [file_data_list[i] for i in valid_indices]
             
-            st.success(f"📊 分组完成：{n_calib} 场率定 + {len(valid_files)} 场验证")
+            st.success(f"📊 分组完成：{n_calib} 场率定 + {len(valid_files)} 场验证 (率定:验证=3:1)")
             st.write(f"**率定场次**: {[f['file_name'] for f in calib_files]}")
             st.write(f"**验证场次**: {[f['file_name'] for f in valid_files]}")
             
@@ -1397,6 +1397,18 @@ if uploaded_files and len(uploaded_files) > 0:
             
             st.success(f"✅ 多文件模式率定完成：{len(calibration_results)} 个模型 × {len(file_data_list)} 场洪水")
             
+            # 计算各模型在所有率定场次的平均NSE（而非单场拼接数据的NSE）
+            for model_name in calibration_results:
+                calib_nse_list = []
+                for file_name in calib_file_names:
+                    if file_name in file_simulation_results.get(model_name, {}):
+                        calib_nse_list.append(file_simulation_results[model_name][file_name]['nse'])
+                if calib_nse_list:
+                    avg_nse = np.mean(calib_nse_list)
+                    calibration_results[model_name]['nse'] = avg_nse
+                    calibration_results[model_name]['calib_nse_list'] = calib_nse_list
+                    calibration_results[model_name]['avg_calib_nse'] = avg_nse
+            
             # ============================================================
             # 📊 绘图：每个文件一张图
             # ============================================================
@@ -1423,7 +1435,7 @@ if uploaded_files and len(uploaded_files) > 0:
                 ax = axes[idx]
                 
                 first_model = list(file_simulation_results.keys())[0] if file_simulation_results else None
-                if first_model and file_name in file_simulation_results[first_model]:
+                if first_model and file_name in file_simulation_results.get(first_model, {}):
                     precip_arr = file_simulation_results[first_model][file_name].get('precip', np.zeros(len(raw_df)))
                     flow_arr = file_simulation_results[first_model][file_name]['observed']
                     is_calib = file_simulation_results[first_model][file_name].get('is_calib', False)
@@ -1435,6 +1447,13 @@ if uploaded_files and len(uploaded_files) > 0:
                     precip_arr = np.array(df['precip'].values) if 'precip' in df.columns else np.zeros(len(df))
                     flow_arr = np.array(df['flow'].values) if 'flow' in df.columns else np.zeros(len(df))
                     is_calib = False
+                
+                if precip_arr is None or len(precip_arr) == 0:
+                    precip_arr = np.zeros(len(flow_arr)) if flow_arr is not None and len(flow_arr) > 0 else np.array([0.0])
+                if flow_arr is None or len(flow_arr) == 0:
+                    flow_arr = np.zeros(len(precip_arr))
+                precip_arr = np.nan_to_num(precip_arr, nan=0.0, posinf=0.0, neginf=0.0)
+                flow_arr = np.nan_to_num(flow_arr, nan=0.0, posinf=0.0, neginf=0.0)
                 
                 event_type = "率定" if is_calib else "验证"
                 ax.plot(flow_arr, "k-", label="实测", linewidth=2.5)
@@ -1448,11 +1467,17 @@ if uploaded_files and len(uploaded_files) > 0:
                 xlabel_text = "时间(天)" if user_timestep == 'daily' else "时间(h)"
                 
                 for model_name in file_simulation_results:
-                    if file_name in file_simulation_results[model_name]:
+                    if file_name in file_simulation_results.get(model_name, {}):
                         result = file_simulation_results[model_name][file_name]
+                        simulated = result.get('simulated')
+                        if simulated is None or len(simulated) == 0:
+                            st.warning(f"⚠️ {file_name}/{model_name}: 模拟结果为空，跳过绘制")
+                            continue
+                        simulated = np.nan_to_num(simulated, nan=0.0, posinf=0.0, neginf=0.0)
                         color = model_colors.get(model_name, '#999999')
-                        label = f"{model_name} (NSE={result['nse']:.3f})"
-                        ax.plot(result['simulated'], color=color, label=label, linewidth=2, alpha=0.8)
+                        calib_nse = calibration_results.get(model_name, {}).get('nse', result['nse'])
+                        label = f"{model_name} (率定NSE={calib_nse:.3f}, 单场NSE={result['nse']:.3f})"
+                        ax.plot(simulated, color=color, label=label, linewidth=2, alpha=0.8)
                         
                         summary_data.append({
                             "文件": file_name,
