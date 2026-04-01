@@ -29,6 +29,10 @@ from src.llm_reporter import (
     generate_comprehensive_report, generate_multifile_report
 )
 from src.models.registry import ModelRegistry
+from src.bma_ensemble import (
+    calc_bma_weights, apply_bma_ensemble, calc_bma_metrics,
+    format_weights_string
+)
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ============================================================
@@ -1466,6 +1470,9 @@ if uploaded_files and len(uploaded_files) > 0:
                 
                 xlabel_text = "时间(天)" if user_timestep == 'daily' else "时间(h)"
                 
+                simulated_list = []
+                model_names = []
+                nse_list = []
                 for model_name in file_simulation_results:
                     if file_name in file_simulation_results.get(model_name, {}):
                         result = file_simulation_results[model_name][file_name]
@@ -1474,6 +1481,10 @@ if uploaded_files and len(uploaded_files) > 0:
                             st.warning(f"⚠️ {file_name}/{model_name}: 模拟结果为空，跳过绘制")
                             continue
                         simulated = np.nan_to_num(simulated, nan=0.0, posinf=0.0, neginf=0.0)
+                        simulated_list.append(simulated)
+                        model_names.append(model_name)
+                        nse_list.append(result['nse'])
+                        
                         color = model_colors.get(model_name, '#999999')
                         calib_nse = calibration_results.get(model_name, {}).get('nse', result['nse'])
                         label = f"{model_name} (率定NSE={calib_nse:.3f}, 单场NSE={result['nse']:.3f})"
@@ -1494,6 +1505,27 @@ if uploaded_files and len(uploaded_files) > 0:
                         if "整场洪水" not in all_results[file_name]:
                             all_results[file_name]["整场洪水"] = []
                         all_results[file_name]["整场洪水"].append(result)
+                
+                if len(simulated_list) >= 2:
+                    weights = calc_bma_weights(nse_list)
+                    bma_result = apply_bma_ensemble(simulated_list, weights)
+                    bma_nse = calc_nse(flow_arr, bma_result)
+                    bma_rmse = calc_rmse(flow_arr, bma_result)
+                    bma_pbias = calc_pbias(flow_arr, bma_result)
+                    weights_str = format_weights_string(model_names, weights)
+                    label = f'BMA集成 (NSE={bma_nse:.3f}) [{weights_str}]'
+                    ax.plot(bma_result, color='#9b59b6', linestyle='--', 
+                            label=label, linewidth=2.5, alpha=0.9)
+                    
+                    summary_data.append({
+                        "文件": file_name,
+                        "场次": "整场洪水",
+                        "类型": event_type,
+                        "模型": "BMA集成",
+                        "NSE": bma_nse,
+                        "RMSE": bma_rmse,
+                        "PBIAS": f"{bma_pbias:.1f}%"
+                    })
                 
                 ax.set_title(f"{file_name} [{event_type}]", fontsize=14)
                 ax.legend(fontsize=9, loc='upper right')
@@ -1678,10 +1710,16 @@ if uploaded_files and len(uploaded_files) > 0:
             
             xlabel_text = "时间(天)" if user_timestep == 'daily' else "时间(h)"
             
+            simulated_list = []
+            model_names = []
+            nse_list = []
             for model_name, result in calibration_results.items():
                 color = model_colors.get(model_name, '#999999')
                 label = f"{model_name} (NSE={result['nse']:.3f})"
                 ax.plot(result['simulated'], color=color, label=label, linewidth=2, alpha=0.8)
+                simulated_list.append(result['simulated'])
+                model_names.append(model_name)
+                nse_list.append(result['nse'])
                 
                 summary_data.append({
                     "文件": "连续序列",
@@ -1691,6 +1729,27 @@ if uploaded_files and len(uploaded_files) > 0:
                     "NSE": result['nse'],
                     "RMSE": result['rmse'],
                     "PBIAS": f"{result['pbias']:.1f}%"
+                })
+            
+            if len(simulated_list) >= 2:
+                weights = calc_bma_weights(nse_list)
+                bma_result = apply_bma_ensemble(simulated_list, weights)
+                bma_nse = calc_nse(all_flow_arr, bma_result)
+                bma_rmse = calc_rmse(all_flow_arr, bma_result)
+                bma_pbias = calc_pbias(all_flow_arr, bma_result)
+                weights_str = format_weights_string(model_names, weights)
+                label = f'BMA集成 (NSE={bma_nse:.3f}) [{weights_str}]'
+                ax.plot(bma_result, color='#9b59b6', linestyle='--', 
+                        label=label, linewidth=2.5, alpha=0.9)
+                
+                summary_data.append({
+                    "文件": "连续序列",
+                    "场次": "整场洪水",
+                    "类型": "率定",
+                    "模型": "BMA集成",
+                    "NSE": bma_nse,
+                    "RMSE": bma_rmse,
+                    "PBIAS": f"{bma_pbias:.1f}%"
                 })
             
             ax.set_title("连续序列洪水模拟结果", fontsize=14)
@@ -1722,10 +1781,16 @@ if uploaded_files and len(uploaded_files) > 0:
             
             xlabel_text = "时间(天)" if user_timestep == 'daily' else "时间(h)"
             
+            simulated_list = []
+            model_names = []
+            nse_list = []
             for model_name, result in calibration_results.items():
                 color = model_colors.get(model_name, '#999999')
                 label = f"{model_name} (NSE={result['nse']:.3f})"
                 ax.plot(result['simulated'], color=color, label=label, linewidth=2, alpha=0.8)
+                simulated_list.append(result['simulated'])
+                model_names.append(model_name)
+                nse_list.append(result['nse'])
                 
                 summary_data.append({
                     "文件": "单场洪水",
@@ -1735,6 +1800,27 @@ if uploaded_files and len(uploaded_files) > 0:
                     "NSE": result['nse'],
                     "RMSE": result['rmse'],
                     "PBIAS": f"{result['pbias']:.1f}%"
+                })
+            
+            if len(simulated_list) >= 2:
+                weights = calc_bma_weights(nse_list)
+                bma_result = apply_bma_ensemble(simulated_list, weights)
+                bma_nse = calc_nse(all_flow_arr, bma_result)
+                bma_rmse = calc_rmse(all_flow_arr, bma_result)
+                bma_pbias = calc_pbias(all_flow_arr, bma_result)
+                weights_str = format_weights_string(model_names, weights)
+                label = f'BMA集成 (NSE={bma_nse:.3f}) [{weights_str}]'
+                ax.plot(bma_result, color='#9b59b6', linestyle='--', 
+                        label=label, linewidth=2.5, alpha=0.9)
+                
+                summary_data.append({
+                    "文件": "单场洪水",
+                    "场次": "整场洪水",
+                    "类型": "率定",
+                    "模型": "BMA集成",
+                    "NSE": bma_nse,
+                    "RMSE": bma_rmse,
+                    "PBIAS": f"{bma_pbias:.1f}%"
                 })
             
             ax.set_title("单场洪水模拟结果", fontsize=14)
