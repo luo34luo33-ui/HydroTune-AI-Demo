@@ -311,15 +311,60 @@ with st.sidebar:
 
     st.divider()
 
-    st.header("⚙️ 率定设置")
+    st.markdown("""
+⚙️ 率定设置 
+<span style="font-size: 14px; color: #888; cursor: help;" title="• 两阶段(推荐): 快速全局搜索+局部精细优化
+• PSO: 粒子群优化算法，适合大规模问题
+• SCE-UA: 洗牌复形进化，全局优化能力强
+• DE: 差分进化，简单高效
+• GA: 遗传算法，进化过程中保持多样性">❓</span>
+""", unsafe_allow_html=True)
+
+    algorithm = st.selectbox(
+        "优化算法",
+        options=["两阶段算法(推荐)", "PSO", "SCE-UA", "差分进化(DE)", "遗传算法(GA)"],
+        index=0,
+        help="选择率定使用的优化算法"
+    )
+
     max_iter = st.slider(
         "迭代次数",
         min_value=5,
-        max_value=30,
+        max_value=50,
         value=10,
         step=5,
-        help="两阶段算法：阶段1全局搜索，阶段2局部优化",
+        help="优化算法迭代次数，次数越多结果越精确但耗时越长"
     )
+
+    if algorithm == "PSO":
+        st.subheader("粒子群优化 (PSO) 参数")
+        n_particles = st.slider("粒子数", 10, 100, 20, help="粒子数量越多搜索能力越强，但计算时间增加")
+        w = st.slider("惯性权重 w", 0.0, 1.0, 0.7, 0.01, help="控制粒子运动惯性，值越大搜索范围越广")
+        c1 = st.slider("个体学习因子 c1", 0.0, 2.0, 1.5, 0.1, help="控制粒子向自身最优位置移动的能力")
+        c2 = st.slider("群体学习因子 c2", 0.0, 2.0, 1.5, 0.1, help="控制粒子向群体最优位置移动的能力")
+        algo_params = {"n_particles": n_particles, "w": w, "c1": c1, "c2": c2}
+    elif algorithm == "遗传算法(GA)":
+        st.subheader("遗传算法 (GA) 参数")
+        pop_size = st.slider("种群大小", 10, 100, 20, help="种群数量越多遗传多样性越好")
+        n_generations = st.slider("进化代数", 10, 100, 50, help="进化代数越多优化越充分")
+        crossover_rate = st.slider("交叉率", 0.0, 1.0, 0.8, 0.05, help="染色体交叉产生新个体的概率")
+        mutation_rate = st.slider("变异率", 0.0, 1.0, 0.1, 0.05, help="基因变异的概率，防止陷入局部最优")
+        algo_params = {"pop_size": pop_size, "n_generations": n_generations, 
+                       "crossover_rate": crossover_rate, "mutation_rate": mutation_rate}
+    elif algorithm == "SCE-UA":
+        st.subheader("SCE-UA 参数")
+        n_complexes = st.slider("复形数量", 2, 10, 5, help="复形数量越多全局搜索能力越强")
+        points_per_complex = st.slider("每复形点数", 5, 20, 10, help="每个复形包含的点数")
+        algo_params = {"n_complexes": n_complexes, "points_per_complex": points_per_complex}
+    elif algorithm == "差分进化(DE)":
+        st.subheader("差分进化 (DE) 参数")
+        mutation_factor = st.slider("变异因子 F", 0.0, 2.0, 0.8, 0.1, help="变异缩放因子，控制差异向量权重，推荐0.5-1.0")
+        crossover_prob = st.slider("交叉概率 CR", 0.0, 1.0, 0.7, 0.1, help="交叉概率，值越大交叉频率越高")
+        pop_size_de = st.slider("种群大小", 10, 100, 20, help="种群数量越多搜索能力越强")
+        algo_params = {"mutation_factor": mutation_factor, "crossover_prob": crossover_prob, 
+                       "pop_size": pop_size_de}
+    else:
+        algo_params = {}
 
     st.divider()
 
@@ -1198,7 +1243,9 @@ if uploaded_files and len(uploaded_files) > 0:
                     flow,
                     max_iter=max_iter,
                     spatial_data=spatial_data,
-                    timestep=user_timestep
+                    timestep=user_timestep,
+                    algorithm=algorithm,
+                    algo_params=algo_params
                 )
             except Exception as e:
                 st.error(f"  ⚠️ {model_name} 率定异常: {type(e).__name__}: {str(e)}")

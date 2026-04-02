@@ -133,22 +133,30 @@ def calibrate_model_fast(
     spatial_data: Dict = None,
     temperature: np.ndarray = None,
     timestep: str = 'daily',
+    algorithm: str = 'two_stage',
+    algo_params: Dict = None,
 ) -> Tuple[dict, float, np.ndarray]:
     """
-    两阶段快速率定算法
+    多算法率定模型参数
     
-    阶段1: dual_annealing - 快速全局搜索
-    阶段2: L-BFGS-B - 局部精细优化
+    支持的算法:
+    - 'two_stage': 两阶段算法 (dual_annealing + L-BFGS-B)
+    - 'pso': 粒子群优化算法
+    - 'ga': 遗传算法
+    - 'sce': SCE-UA算法
+    - 'de': 差分进化算法
     
     Args:
         model_name: 模型名称
         precip: 降水序列
         evap: 蒸发序列
         observed_flow: 观测流量序列
-        max_iter: 总迭代次数
+        max_iter: 最大迭代次数
         spatial_data: 空间数据
         temperature: 温度序列
         timestep: 时间尺度 'hourly' 或 'daily'
+        algorithm: 算法选择
+        algo_params: 算法参数字典
         
     Returns:
         (最优参数字典, 最优NSE值, 模拟流量数组)
@@ -159,6 +167,9 @@ def calibrate_model_fast(
         spatial_data['area'] = 150.7944
     spatial_data['timestep'] = timestep
     
+    if algo_params is None:
+        algo_params = {}
+    
     model = ModelRegistry.get_model(model_name)
     bounds = list(model.param_bounds.values())
     param_names = list(model.param_bounds.keys())
@@ -166,7 +177,6 @@ def calibrate_model_fast(
     
     def objective(params_array):
         params = {k: v for k, v in zip(param_names, params_array)}
-        # 检查模型特定的参数约束
         if hasattr(model, 'validate_params') and not model.validate_params(params):
             return 1e10
         try:
@@ -178,7 +188,30 @@ def calibrate_model_fast(
         except Exception:
             return 1e10
     
-    # 根据参数数量调整迭代次数（参数越多，迭代越慢）
+    if algorithm == 'two_stage' or algorithm == '两阶段算法(推荐)':
+        best_x, best_nse = _two_stage_optimize(objective, bounds, max_iter, n_params)
+    elif algorithm == 'pso' or algorithm == 'PSO':
+        best_x, best_nse = _pso_optimize(objective, bounds, max_iter, n_params, algo_params)
+    elif algorithm == 'ga' or algorithm == '遗传算法(GA)':
+        best_x, best_nse = _ga_optimize(objective, bounds, max_iter, n_params, algo_params)
+    elif algorithm == 'sce' or algorithm == 'SCE-UA':
+        best_x, best_nse = _sce_optimize(objective, bounds, max_iter, n_params)
+    elif algorithm == 'de' or algorithm == '差分进化(DE)':
+        best_x, best_nse = _de_optimize(objective, bounds, max_iter, n_params, algo_params)
+    else:
+        best_x, best_nse = _two_stage_optimize(objective, bounds, max_iter, n_params)
+    
+    best_params = {k: v for k, v in zip(param_names, best_x)}
+    try:
+        simulated = model.run(precip, evap, best_params, spatial_data, temperature)
+    except Exception:
+        simulated = np.full_like(observed_flow, np.nan)
+        best_nse = -1e10
+    
+    return best_params, best_nse, simulated
+
+
+def _two_stage_optimize(objective, bounds, max_iter, n_params):
     if n_params <= 5:
         stage1_iter = max(5, max_iter // 2)
         stage2_iter = max(20, max_iter * 3)
@@ -189,44 +222,102 @@ def calibrate_model_fast(
         stage1_iter = max(5, max_iter // 2)
         stage2_iter = max(15, max_iter)
     
-    # 阶段1: dual_annealing 全局搜索
     result1 = dual_annealing(
-        objective,
-        bounds=bounds,
-        maxiter=stage1_iter,
-        seed=42,
-        initial_temp=5230,
-        restart_temp_ratio=1e-4,
-        visit=2.62,
-        accept=-5.0,
-        no_local_search=True,
+        objective, bounds=bounds, maxiter=stage1_iter,
+        initial_temp=5230, restart_temp_ratio=1e-4,
+        visit=2.62, accept=-5.0, no_local_search=True,
     )
-    
-    # 阶段2: L-BFGS-B 局部精细优化
     result2 = minimize(
-        objective,
-        x0=result1.x,
-        method='L-BFGS-B',
-        bounds=bounds,
+        objective, x0=result1.x, method='L-BFGS-B', bounds=bounds,
         options={'maxiter': stage2_iter, 'ftol': 1e-7}
     )
     
-    # 选择最优结果
     if result2.fun <= result1.fun:
-        best_x = result2.x
-        best_nse = -result2.fun
-    else:
-        best_x = result1.x
-        best_nse = -result1.fun
-    
-    best_params = {k: v for k, v in zip(param_names, best_x)}
+        return result2.x, -result2.fun
+    return result1.x, -result1.fun
+
+
+def _pso_optimize(objective, bounds, max_iter, n_params, algo_params):
     try:
-        simulated = model.run(precip, evap, best_params, spatial_data, temperature)
-    except Exception:
-        simulated = np.full_like(observed_flow, np.nan)
-        best_nse = -1e10
+        from pyswarm import pso
+    except ImportError:
+        return _two_stage_optimize(objective, bounds, max_iter, n_params)
     
-    return best_params, best_nse, simulated
+    n_particles = algo_params.get('n_particles', 20)
+    omega = algo_params.get('w', 0.7)
+    phip = algo_params.get('c1', 1.5)
+    phig = algo_params.get('c2', 1.5)
+    
+    lb = [b[0] for b in bounds]
+    ub = [b[1] for b in bounds]
+    
+    xopt, fopt = pso(objective, lb, ub, swarmsize=n_particles, 
+                     maxiter=max_iter, omega=omega, phip=phip, phig=phig)
+    return xopt, -fopt
+
+
+def _ga_optimize(objective, bounds, max_iter, n_params, algo_params):
+    pop_size = algo_params.get('pop_size', 20)
+    n_generations = algo_params.get('n_generations', 50)
+    crossover_rate = algo_params.get('crossover_rate', 0.8)
+    mutation_rate = algo_params.get('mutation_rate', 0.1)
+    
+    n_weights = len(bounds)
+    lb = [b[0] for b in bounds]
+    ub = [b[1] for b in bounds]
+    
+    np.random.seed(42)
+    
+    def create_individual():
+        return [np.random.uniform(lb[i], ub[i]) for i in range(n_weights)]
+    
+    pop = [create_individual() for _ in range(pop_size)]
+    fitnesses = [objective(np.array(ind)) for ind in pop]
+    
+    for gen in range(n_generations):
+        new_pop = []
+        for _ in range(pop_size):
+            parent1, parent2 = np.random.choice(len(pop), 2, replace=False)
+            child = pop[parent1].copy()
+            
+            if np.random.random() < crossover_rate:
+                crossover_point = np.random.randint(1, n_weights)
+                child[crossover_point:] = pop[parent2][crossover_point:]
+            
+            if np.random.random() < mutation_rate:
+                for i in range(n_weights):
+                    if np.random.random() < 0.5:
+                        child[i] = np.clip(
+                            np.random.normal(child[i], 0.1 * (ub[i] - lb[i])),
+                            lb[i], ub[i]
+                        )
+            
+            new_pop.append(child)
+        
+        pop = new_pop
+        fitnesses = [objective(np.array(ind)) for ind in pop]
+    
+    best_idx = np.argmin(fitnesses)
+    return np.array(pop[best_idx]), -fitnesses[best_idx]
+
+
+def _sce_optimize(objective, bounds, max_iter, n_params):
+    result = differential_evolution(objective, bounds=bounds, maxiter=max_iter, 
+                                     tol=1e-6, polish=True, strategy='best1bin')
+    return result.x, -result.fun
+
+
+def _de_optimize(objective, bounds, max_iter, n_params, algo_params):
+    mutation_factor = algo_params.get('mutation_factor', 0.8)
+    crossover_prob = algo_params.get('crossover_prob', 0.7)
+    pop_size = algo_params.get('pop_size', 20)
+    
+    result = differential_evolution(
+        objective, bounds=bounds, maxiter=max_iter, tol=1e-6, polish=True,
+        strategy='best1bin', mutation=mutation_factor, recombination=crossover_prob,
+        popsize=pop_size
+    )
+    return result.x, -result.fun
 
 
 # ============================================================
