@@ -2063,13 +2063,15 @@ else:
 if not uploaded_files:
     st.info("👈 请在左侧上传水文数据文件开始分析")
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("支持模型", f"{len(RECOMMENDED_MODELS)} 个")
     with col2:
         st.metric("支持格式", "CSV / Excel")
     with col3:
-        st.metric("率定算法", "两阶段(并行)")
+        st.metric("率定算法", "5种可选")
+    with col4:
+        st.metric("汇流演算", "马斯京根")
     
     st.divider()
     
@@ -2078,8 +2080,25 @@ if not uploaded_files:
     1. **上传数据**：上传一个或多个水文数据文件
     2. **洪水场次**：系统自动识别每场洪水
     3. **自动率定**：对每场洪水分别进行多模型率定
-    4. **结果对比**：查看性能指标、参数表格、流量过程线
+    4. **结果对比**：查看性能指标(NSE/KGE/RMSE/PBIAS)、参数表格、流量过程线
     5. **智能报告**：自动生成分析报告并支持导出
+    """)
+    
+    st.subheader("🔧 率定算法选项")
+    st.markdown("""
+    - **两阶段算法(推荐)**：dual_annealing + L-BFGS-B，快速全局搜索+局部精细优化
+    - **PSO粒子群**：粒子群优化算法，适合大规模问题
+    - **SCE-UA**：洗牌复形进化算法，全局优化能力强
+    - **DE差分进化**：简单高效，适合连续参数优化
+    - **GA遗传算法**：进化过程中保持多样性
+    """)
+    
+    st.subheader("🌊 上游出库汇流演算")
+    st.markdown("""
+    支持启用上游出库马斯京根河道汇流演算功能：
+    - 在侧边栏启用"上游出库汇流演算"
+    - 指定上游出库列名（数据需在同一文件中）
+    - Muskingum参数(k, x)与水文模型参数一起率定
     """)
     
     st.subheader("📊 数据格式要求")
@@ -2089,4 +2108,5 @@ if not uploaded_files:
     - **降水列**: precip / rainfall / p / 降水 / 降雨
     - **蒸发列**: evap / et / 蒸发 (可选)
     - **流量列**: flow / discharge / q / 流量 / 径流
+    - **上游出库列**: upstream (可选，启用汇流演算时需要)
     """)
