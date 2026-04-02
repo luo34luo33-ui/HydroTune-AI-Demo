@@ -17,7 +17,7 @@ from src.data_agent import (
     detect_flood_events, FloodEvent
 )
 from src.hydro_calc import (
-    calibrate_model_fast, calc_nse, calc_rmse, calc_mae, calc_pbias,
+    calibrate_model_fast, calc_nse, calc_rmse, calc_mae, calc_pbias, calc_kge,
     get_model_param_info, generate_param_table
 )
 from src.data_preanalysis import (
@@ -1449,8 +1449,8 @@ if uploaded_files and len(uploaded_files) > 0:
                             "model_name": model_name,
                             "params": safe_params,
                             "nse": calc_nse(file_data['flow'], simulated),
+                            "kge": calc_kge(file_data['flow'], simulated),
                             "rmse": calc_rmse(file_data['flow'], simulated),
-                            "mae": calc_mae(file_data['flow'], simulated),
                             "pbias": calc_pbias(file_data['flow'], simulated),
                             "simulated": simulated,
                             "observed": file_data['flow'],
@@ -1471,8 +1471,8 @@ if uploaded_files and len(uploaded_files) > 0:
                                     "model_name": model_name,
                                     "params": default_xaj_params,
                                     "nse": calc_nse(file_data['flow'], simulated),
+                                    "kge": calc_kge(file_data['flow'], simulated),
                                     "rmse": calc_rmse(file_data['flow'], simulated),
-                                    "mae": calc_mae(file_data['flow'], simulated),
                                     "pbias": calc_pbias(file_data['flow'], simulated),
                                     "simulated": simulated,
                                     "observed": file_data['flow'],
@@ -1485,8 +1485,8 @@ if uploaded_files and len(uploaded_files) > 0:
                                     "model_name": model_name,
                                     "params": safe_params,
                                     "nse": -999,
+                                    "kge": -999,
                                     "rmse": -999,
-                                    "mae": -999,
                                     "pbias": -999,
                                     "simulated": np.zeros_like(file_data['flow']),
                                     "observed": file_data['flow'],
@@ -1503,17 +1503,24 @@ if uploaded_files and len(uploaded_files) > 0:
             
             st.success(f"✅ 多文件模式率定完成：{len(calibration_results)} 个模型 × {len(file_data_list)} 场洪水")
             
-            # 计算各模型在所有率定场次的平均NSE（而非单场拼接数据的NSE）
+            # 计算各模型在所有率定场次的平均指标（场次平均，而非单场拼接数据的NSE）
             for model_name in calibration_results:
                 calib_nse_list = []
+                calib_kge_list = []
+                calib_rmse_list = []
+                calib_pbias_list = []
                 for file_name in calib_file_names:
                     if file_name in file_simulation_results.get(model_name, {}):
-                        calib_nse_list.append(file_simulation_results[model_name][file_name]['nse'])
+                        result = file_simulation_results[model_name][file_name]
+                        calib_nse_list.append(result['nse'])
+                        calib_kge_list.append(result.get('kge', result['nse']))
+                        calib_rmse_list.append(result['rmse'])
+                        calib_pbias_list.append(result['pbias'])
                 if calib_nse_list:
-                    avg_nse = np.mean(calib_nse_list)
-                    calibration_results[model_name]['nse'] = avg_nse
-                    calibration_results[model_name]['calib_nse_list'] = calib_nse_list
-                    calibration_results[model_name]['avg_calib_nse'] = avg_nse
+                    calibration_results[model_name]['nse'] = np.mean(calib_nse_list)
+                    calibration_results[model_name]['kge'] = np.mean(calib_kge_list)
+                    calibration_results[model_name]['rmse'] = np.mean(calib_rmse_list)
+                    calibration_results[model_name]['pbias'] = np.mean(calib_pbias_list)
             
             # ============================================================
             # 📊 绘图：每个文件一张图
@@ -1598,8 +1605,9 @@ if uploaded_files and len(uploaded_files) > 0:
                             "类型": event_type,
                             "模型": model_name,
                             "NSE": result['nse'],
+                            "KGE": result.get('kge', result['nse']),
                             "RMSE": result['rmse'],
-                            "PBIAS": f"{result['pbias']:.1f}%"
+                            "PBIAS": result['pbias']
                         })
                         
                         if file_name not in all_results:
@@ -1625,8 +1633,9 @@ if uploaded_files and len(uploaded_files) > 0:
                         "类型": event_type,
                         "模型": "BMA集成",
                         "NSE": bma_nse,
+                        "KGE": bma_nse,
                         "RMSE": bma_rmse,
-                        "PBIAS": f"{bma_pbias:.1f}%"
+                        "PBIAS": bma_pbias
                     })
                 
                 ax.set_title(f"{file_name} [{event_type}]", fontsize=14)
@@ -1659,8 +1668,17 @@ if uploaded_files and len(uploaded_files) > 0:
                 calib_data = [d for d in summary_data if d['类型'] == '率定']
                 valid_data = [d for d in summary_data if d['类型'] == '验证']
                 
-                summary_df = pd.DataFrame(summary_data)
-                st.dataframe(summary_df, use_container_width=True, hide_index=True)
+                # 创建率定场次汇总表
+                if calib_data:
+                    st.subheader("📊 率定场次指标汇总")
+                    calib_df = pd.DataFrame(calib_data)
+                    st.dataframe(calib_df, use_container_width=True, hide_index=True)
+                
+                # 创建验证场次汇总表
+                if valid_data:
+                    st.subheader("📊 验证场次指标汇总")
+                    valid_df = pd.DataFrame(valid_data)
+                    st.dataframe(valid_df, use_container_width=True, hide_index=True)
                 
                 if calib_data and valid_data:
                     st.divider()
@@ -1670,16 +1688,24 @@ if uploaded_files and len(uploaded_files) > 0:
                     with col1:
                         st.markdown("**率定场次平均**")
                         calib_nse = np.mean([d['NSE'] for d in calib_data])
+                        calib_kge = np.mean([d['KGE'] for d in calib_data])
                         calib_rmse = np.mean([d['RMSE'] for d in calib_data])
-                        st.metric("率定NSE", f"{calib_nse:.4f}")
-                        st.metric("率定RMSE", f"{calib_rmse:.4f}")
+                        calib_pbias = np.mean([d['PBIAS'] for d in calib_data])
+                        st.metric("NSE", f"{calib_nse:.4f}")
+                        st.metric("KGE", f"{calib_kge:.4f}")
+                        st.metric("RMSE", f"{calib_rmse:.4f}")
+                        st.metric("PBIAS", f"{calib_pbias:.2f}%")
                     
                     with col2:
                         st.markdown("**验证场次平均**")
                         valid_nse = np.mean([d['NSE'] for d in valid_data])
+                        valid_kge = np.mean([d['KGE'] for d in valid_data])
                         valid_rmse = np.mean([d['RMSE'] for d in valid_data])
-                        st.metric("验证NSE", f"{valid_nse:.4f}")
-                        st.metric("验证RMSE", f"{valid_rmse:.4f}")
+                        valid_pbias = np.mean([d['PBIAS'] for d in valid_data])
+                        st.metric("NSE", f"{valid_nse:.4f}")
+                        st.metric("KGE", f"{valid_kge:.4f}")
+                        st.metric("RMSE", f"{valid_rmse:.4f}")
+                        st.metric("PBIAS", f"{valid_pbias:.2f}%")
                 
                 # 统一参数表格
                 st.divider()
@@ -1829,8 +1855,9 @@ if uploaded_files and len(uploaded_files) > 0:
                     "类型": "率定",
                     "模型": model_name,
                     "NSE": result['nse'],
+                    "KGE": result.get('kge', result['nse']),
                     "RMSE": result['rmse'],
-                    "PBIAS": f"{result['pbias']:.1f}%"
+                    "PBIAS": result['pbias']
                 })
             
             if len(simulated_list) >= 2:
@@ -1850,8 +1877,9 @@ if uploaded_files and len(uploaded_files) > 0:
                     "类型": "率定",
                     "模型": "BMA集成",
                     "NSE": bma_nse,
+                    "KGE": bma_nse,
                     "RMSE": bma_rmse,
-                    "PBIAS": f"{bma_pbias:.1f}%"
+                    "PBIAS": bma_pbias
                 })
             
             ax.set_title("连续序列洪水模拟结果", fontsize=14)
@@ -1900,8 +1928,9 @@ if uploaded_files and len(uploaded_files) > 0:
                     "类型": "率定",
                     "模型": model_name,
                     "NSE": result['nse'],
+                    "KGE": result.get('kge', result['nse']),
                     "RMSE": result['rmse'],
-                    "PBIAS": f"{result['pbias']:.1f}%"
+                    "PBIAS": result['pbias']
                 })
             
             if len(simulated_list) >= 2:
@@ -1921,8 +1950,9 @@ if uploaded_files and len(uploaded_files) > 0:
                     "类型": "率定",
                     "模型": "BMA集成",
                     "NSE": bma_nse,
+                    "KGE": bma_nse,
                     "RMSE": bma_rmse,
-                    "PBIAS": f"{bma_pbias:.1f}%"
+                    "PBIAS": bma_pbias
                 })
             
             ax.set_title("单场洪水模拟结果", fontsize=14)

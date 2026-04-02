@@ -60,6 +60,34 @@ def calc_pbias(observed: np.ndarray, simulated: np.ndarray) -> float:
     return 100 * np.sum(obs - sim) / np.sum(obs)
 
 
+def calc_kge(observed: np.ndarray, simulated: np.ndarray) -> float:
+    """计算Kling-Gupta效率系数"""
+    mask = ~(np.isnan(observed) | np.isnan(simulated))
+    obs, sim = observed[mask], simulated[mask]
+    
+    if len(obs) < 2:
+        return np.nan
+    
+    obs_mean = np.mean(obs)
+    sim_mean = np.mean(sim)
+    
+    obs_std = np.std(obs)
+    sim_std = np.std(sim)
+    
+    if obs_std == 0 or sim_std == 0:
+        return np.nan
+    
+    r = np.corrcoef(obs, sim)[0, 1]
+    if np.isnan(r):
+        r = 0
+    
+    alpha = sim_std / obs_std
+    beta = sim_mean / obs_mean
+    
+    kge = 1 - np.sqrt((r - 1)**2 + (alpha - 1)**2 + (beta - 1)**2)
+    return kge
+
+
 # ============================================================
 # 差分进化率定
 # ============================================================
