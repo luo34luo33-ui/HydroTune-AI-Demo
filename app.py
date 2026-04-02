@@ -311,6 +311,46 @@ with st.sidebar:
 
     st.divider()
 
+    st.header("🌊 上游出库汇流演算")
+    enable_upstream_routing = st.checkbox(
+        "启用上游出库汇流演算",
+        value=False,
+        help="启用后将使用马斯京根(Muskingum)方法将上游来水演算后叠加到出口断面流量"
+    )
+    
+    if enable_upstream_routing:
+        upstream_col = st.text_input(
+            "上游出库列名",
+            value="",
+            help="上游断面流量列名（数据需在同一文件中）"
+        )
+        column_mapping['upstream'] = upstream_col if upstream_col else ""
+        
+        with st.expander("马斯京根参数"):
+            st.caption("参数将跟随水文模型一起率定")
+            k_routing = st.slider(
+                "Muskingum传播时间k",
+                min_value=0.5,
+                max_value=5.0,
+                value=2.5,
+                step=0.1,
+                help="河道传播时间参数"
+            )
+            x_routing = st.slider(
+                "Muskingum权重因子x",
+                min_value=0.0,
+                max_value=0.5,
+                value=0.25,
+                step=0.05,
+                help="权重因子，0为蓄水量演算，0.5为流量演算"
+            )
+            st.caption(f"当前参数: k={k_routing}, x={x_routing}")
+    else:
+        column_mapping['upstream'] = ""
+        k_routing, x_routing = 2.5, 0.25
+
+    st.divider()
+
     st.markdown("""
 ⚙️ 率定设置 
 <span style="font-size: 14px; color: #888; cursor: help;" title="• 两阶段(推荐): 快速全局搜索+局部精细优化
@@ -783,6 +823,7 @@ if uploaded_files and len(uploaded_files) > 0:
                 precip_arr = np.array(clean_df['precip'].values)
                 flow_arr = np.array(clean_df['flow'].values)
                 evap_arr = np.array(clean_df['evap'].values)
+                upstream_arr = np.array(clean_df['upstream'].values) if 'upstream' in clean_df.columns else None
                 
                 flood_events = detect_flood_events(
                     clean_df['date'],
@@ -1233,7 +1274,7 @@ if uploaded_files and len(uploaded_files) > 0:
         
         calibration_results = {}
         
-        def calibrate_model(model_name, precip, evap, flow):
+        def calibrate_model(model_name, precip, evap, flow, upstream=None):
             try:
                 spatial_data = {'area': catchment_area}
                 return calibrate_model_fast(
@@ -1245,7 +1286,9 @@ if uploaded_files and len(uploaded_files) > 0:
                     spatial_data=spatial_data,
                     timestep=user_timestep,
                     algorithm=algorithm,
-                    algo_params=algo_params
+                    algo_params=algo_params,
+                    upstream_flow=upstream,
+                    enable_routing=enable_upstream_routing
                 )
             except Exception as e:
                 st.error(f"  ⚠️ {model_name} 率定异常: {type(e).__name__}: {str(e)}")
@@ -1269,12 +1312,14 @@ if uploaded_files and len(uploaded_files) > 0:
                 precip_arr = np.array(df['precip'].values) if 'precip' in df.columns else np.zeros(len(df))
                 flow_arr = np.array(df['flow'].values) if 'flow' in df.columns else np.zeros(len(df))
                 evap_arr = np.array(df['evap'].values) if 'evap' in df.columns else np.zeros(len(df))
+                upstream_arr = np.array(df['upstream'].values) if 'upstream' in df.columns and enable_upstream_routing else None
                 
                 file_data_list.append({
                     'file_name': file_name,
                     'precip': precip_arr,
                     'evap': evap_arr,
                     'flow': flow_arr,
+                    'upstream': upstream_arr,
                     'n_timesteps': len(precip_arr)
                 })
             
@@ -1297,14 +1342,18 @@ if uploaded_files and len(uploaded_files) > 0:
             calib_precip_list = []
             calib_evap_list = []
             calib_flow_list = []
+            calib_upstream_list = []
             for fd in calib_files:
                 calib_precip_list.extend(fd['precip'].tolist())
                 calib_evap_list.extend(fd['evap'].tolist())
                 calib_flow_list.extend(fd['flow'].tolist())
+                if enable_upstream_routing and fd.get('upstream') is not None:
+                    calib_upstream_list.extend(fd['upstream'].tolist())
             
             calib_precip = np.array(calib_precip_list)
             calib_evap = np.array(calib_evap_list)
             calib_flow = np.array(calib_flow_list)
+            calib_upstream = np.array(calib_upstream_list) if enable_upstream_routing and calib_upstream_list else None
             
             st.info(f"📊 率定数据：{len(calib_precip)} 个时间步")
             
@@ -1316,7 +1365,7 @@ if uploaded_files and len(uploaded_files) > 0:
                         st.write(f"  ⏭️ 跳过 {model_name}")
                         continue
                     st.write(f"  🔄 开始率定 {model_name}...")
-                    result = calibrate_model(model_name, calib_precip, calib_evap, calib_flow)
+                    result = calibrate_model(model_name, calib_precip, calib_evap, calib_flow, calib_upstream)
                     if result:
                         params, nse, simulated = result
                         calibration_results[model_name] = {

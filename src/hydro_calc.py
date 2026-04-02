@@ -122,6 +122,46 @@ def calibrate_model(
 
 
 # ============================================================
+# 马斯京根河道演算
+# ============================================================
+def muskingum_routing(upstream_flow: np.ndarray, k: float, x: float) -> np.ndarray:
+    """
+    马斯京根(Muskingum)河道汇流演算
+    
+    Args:
+        upstream_flow: 上游来水流量序列
+        k: 传播时间参数
+        x: 权重因子
+        
+    Returns:
+        演算后的流量序列
+    """
+    n = len(upstream_flow)
+    if n == 0:
+        return np.array([])
+    
+    dt = 1.0
+    
+    denom = k * (1 - x) + 0.5 * dt
+    if denom == 0:
+        return upstream_flow.copy()
+    
+    C0 = (-k * x + 0.5 * dt) / denom
+    C1 = (k * x + 0.5 * dt) / denom
+    C2 = (k * (1 - x) - 0.5 * dt) / denom
+    
+    routed = np.zeros(n)
+    routed[0] = upstream_flow[0]
+    
+    for t in range(1, n):
+        I = upstream_flow[t]
+        I_prev = upstream_flow[t - 1]
+        Q_prev = routed[t - 1]
+        routed[t] = C0 * I + C1 * I_prev + C2 * Q_prev
+    
+    return np.maximum(routed, 0)
+
+
 # 两阶段快速率定 (推荐)
 # ============================================================
 def calibrate_model_fast(
@@ -135,6 +175,8 @@ def calibrate_model_fast(
     timestep: str = 'daily',
     algorithm: str = 'two_stage',
     algo_params: Dict = None,
+    upstream_flow: np.ndarray = None,
+    enable_routing: bool = False,
 ) -> Tuple[dict, float, np.ndarray]:
     """
     多算法率定模型参数
@@ -157,6 +199,8 @@ def calibrate_model_fast(
         timestep: 时间尺度 'hourly' 或 'daily'
         algorithm: 算法选择
         algo_params: 算法参数字典
+        upstream_flow: 上游出库流量序列（可选）
+        enable_routing: 是否启用上游汇流演算
         
     Returns:
         (最优参数字典, 最优NSE值, 模拟流量数组)
@@ -171,16 +215,35 @@ def calibrate_model_fast(
         algo_params = {}
     
     model = ModelRegistry.get_model(model_name)
-    bounds = list(model.param_bounds.values())
     param_names = list(model.param_bounds.keys())
+    bounds = list(model.param_bounds.values())
+    
+    routing_params_added = False
+    if enable_routing and upstream_flow is not None and len(upstream_flow) > 0:
+        param_names.extend(['k_routing', 'x_routing'])
+        bounds.extend([(0.5, 5.0), (0.0, 0.5)])
+        routing_params_added = True
+    
     n_params = len(param_names)
     
     def objective(params_array):
-        params = {k: v for k, v in zip(param_names, params_array)}
-        if hasattr(model, 'validate_params') and not model.validate_params(params):
+        if routing_params_added:
+            model_params = {k: v for k, v in zip(param_names[:-2], params_array[:-2])}
+            k_rout = params_array[-2]
+            x_rout = params_array[-1]
+        else:
+            model_params = {k: v for k, v in zip(param_names, params_array)}
+            k_rout, x_rout = 2.5, 0.25
+        
+        if hasattr(model, 'validate_params') and not model.validate_params(model_params):
             return 1e10
         try:
-            simulated = model.run(precip, evap, params, spatial_data, temperature)
+            simulated = model.run(precip, evap, model_params, spatial_data, temperature)
+            
+            if routing_params_added and upstream_flow is not None and len(upstream_flow) > 0:
+                routed_upstream = muskingum_routing(upstream_flow, k_rout, x_rout)
+                simulated = simulated + routed_upstream
+            
             nse = calc_nse(observed_flow, simulated)
             if np.isnan(nse) or np.isinf(nse):
                 return 1e10
@@ -201,9 +264,19 @@ def calibrate_model_fast(
     else:
         best_x, best_nse = _two_stage_optimize(objective, bounds, max_iter, n_params)
     
-    best_params = {k: v for k, v in zip(param_names, best_x)}
+    if routing_params_added:
+        best_params = {k: v for k, v in zip(param_names[:-2], best_x[:-2])}
+        best_params['k_routing'] = best_x[-2]
+        best_params['x_routing'] = best_x[-1]
+    else:
+        best_params = {k: v for k, v in zip(param_names, best_x)}
+    
     try:
         simulated = model.run(precip, evap, best_params, spatial_data, temperature)
+        if routing_params_added and upstream_flow is not None and len(upstream_flow) > 0:
+            routed_upstream = muskingum_routing(upstream_flow, best_params.get('k_routing', 2.5), 
+                                                best_params.get('x_routing', 0.25))
+            simulated = simulated + routed_upstream
     except Exception:
         simulated = np.full_like(observed_flow, np.nan)
         best_nse = -1e10
