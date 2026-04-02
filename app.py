@@ -946,6 +946,9 @@ if uploaded_files and len(uploaded_files) > 0:
         
         if upload_mode == "单文件（一场洪水）":
             # 模式1：整场洪水分析（不识别子场次）
+            if len(all_flow_arr) == 0:
+                st.error("⚠️ 流量数据为空，请检查上传的数据文件")
+                st.stop()
             peak_idx = np.argmax(all_flow_arr)
             peak_flow = all_flow_arr[peak_idx]
             baseflow = np.percentile(all_flow_arr, 10)
@@ -1189,6 +1192,9 @@ if uploaded_files and len(uploaded_files) > 0:
         
         else:
             # 模式3：多文件模式，每文件一场洪水
+            if len(all_flow_arr) == 0:
+                st.warning("⚠️ 流量数据为空，无法进行分析")
+                st.stop()
             peak_idx = np.argmax(all_flow_arr)
             peak_flow = all_flow_arr[peak_idx]
             baseflow = np.percentile(all_flow_arr, 10)
