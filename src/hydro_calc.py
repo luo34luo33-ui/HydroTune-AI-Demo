@@ -339,7 +339,6 @@ def calibrate_model_fast(
     
     try:
         if use_multi_events:
-            # 返回第一个场次的模拟结果用于展示
             first_event = calib_events[0]
             simulated = model.run(first_event['precip'], first_event['evap'], best_params, spatial_data, temperature)
             if routing_params_added and first_event.get('upstream') is not None:
@@ -347,14 +346,12 @@ def calibrate_model_fast(
                                                     best_params.get('k_routing', 2.5), 
                                                     best_params.get('x_routing', 0.25))
                 simulated = simulated + routed_upstream
-            simulated = simulated[warmup_steps:] if warmup_steps > 0 else simulated
         else:
             simulated = model.run(precip, evap, best_params, spatial_data, temperature)
             if routing_params_added and upstream_flow is not None and len(upstream_flow) > 0:
                 routed_upstream = muskingum_routing(upstream_flow, best_params.get('k_routing', 2.5), 
                                                     best_params.get('x_routing', 0.25))
                 simulated = simulated + routed_upstream
-            simulated = simulated[warmup_steps:] if warmup_steps > 0 else simulated
     except Exception:
         simulated = np.full_like(observed_flow, np.nan)
         best_nse = -1e10
