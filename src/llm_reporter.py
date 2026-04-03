@@ -428,7 +428,8 @@ def generate_multifile_report(
     file_data_list: list,
     calibration_results: Dict[str, Any],
     file_simulation_results: Dict[str, Dict[str, Any]],
-    call_llm=call_minimax
+    call_llm=call_minimax,
+    warmup_hours: int = 0
 ) -> str:
     """
     生成多文件模式分析报告（率定-验证分开）
@@ -438,6 +439,7 @@ def generate_multifile_report(
         calibration_results: 率定结果
         file_simulation_results: 各文件模拟结果，包含 is_calib 标记
         call_llm: LLM调用函数
+        warmup_hours: 预热期小时数
         
     Returns:
         Markdown格式的报告
@@ -459,6 +461,10 @@ def generate_multifile_report(
     report_lines.append(f"- **分析场次**: {n_files} 场洪水")
     report_lines.append(f"- **率定模型**: {n_models} 个")
     report_lines.append(f"- **率定策略**: 随机选取约1/3场次率定，其余2/3验证")
+    if warmup_hours > 0:
+        report_lines.append(f"- **预热期**: {warmup_hours} 小时（已从计算中剔除）")
+    else:
+        report_lines.append(f"- **预热期**: 无")
     report_lines.append("")
     
     calib_file_names = set()

@@ -291,6 +291,25 @@ with st.sidebar:
         horizontal=False,
     )
 
+    st.header("⏱️ 预热期设置")
+    has_warmup = st.radio(
+        "预热期",
+        options=["无", "有"],
+        index=0,
+        help="预热期是指模型开始响应前需要丢弃的时间段"
+    )
+    if has_warmup == "有":
+        warmup_hours = st.number_input(
+            "预热期长度(h)",
+            min_value=0,
+            max_value=720,
+            value=24,
+            step=1,
+            help="需要丢弃的预热期时间长度"
+        )
+    else:
+        warmup_hours = 0
+
     st.divider()
 
     # 列名配置
@@ -789,6 +808,7 @@ if uploaded_files and len(uploaded_files) > 0:
         all_flow = []
         all_dates = []
         all_file_events = []
+        all_upstream_arr = None
         detected_timestep = 'daily'
         user_timestep = 'daily'
         file_summary = []
@@ -1344,47 +1364,73 @@ if uploaded_files and len(uploaded_files) > 0:
             st.write(f"**率定场次**: {[f['file_name'] for f in calib_files]}")
             st.write(f"**验证场次**: {[f['file_name'] for f in valid_files]}")
             
-            # 3. 拼接率定场次数据
-            calib_precip_list = []
-            calib_evap_list = []
-            calib_flow_list = []
-            calib_upstream_list = []
+            # 计算预热期步数
+            if warmup_hours > 0 and user_timestep == 'hourly':
+                warmup_steps = warmup_hours
+            elif warmup_hours > 0:
+                warmup_steps = warmup_hours // 24
+            else:
+                warmup_steps = 0
+            
+            # 构建率定场次列表（每个场次独立）
+            calib_events = []
             for fd in calib_files:
-                calib_precip_list.extend(fd['precip'].tolist())
-                calib_evap_list.extend(fd['evap'].tolist())
-                calib_flow_list.extend(fd['flow'].tolist())
-                if enable_upstream_routing and fd.get('upstream') is not None:
-                    calib_upstream_list.extend(fd['upstream'].tolist())
+                event = {
+                    'precip': fd['precip'],
+                    'evap': fd['evap'],
+                    'flow': fd['flow'],
+                    'upstream': fd.get('upstream')
+                }
+                calib_events.append(event)
             
-            calib_precip = np.array(calib_precip_list)
-            calib_evap = np.array(calib_evap_list)
-            calib_flow = np.array(calib_flow_list)
-            calib_upstream = np.array(calib_upstream_list) if enable_upstream_routing and calib_upstream_list else None
+            st.info(f"📊 率定{len(calib_events)}场，每场 {sum(len(e['flow']) for e in calib_events)} 个时间步" + 
+                   (f"，预热期 {warmup_steps} 步" if warmup_steps > 0 else ""))
             
-            st.info(f"📊 率定数据：{len(calib_precip)} 个时间步")
-            
-            # 4. 率定模型
+            # 4. 率定模型（多场次模式）
             import traceback
-            with st.spinner("🤖 AI Agent 正在率定模型 (率定场次)..."):
-                for model_name in RECOMMENDED_MODELS:
+            progress_bar = st.progress(0)
+            with st.spinner("🤖 AI Agent 正在率定模型 (多场次平均NSE)..."):
+                for model_idx, model_name in enumerate(RECOMMENDED_MODELS):
                     if model_name in SKIP_MODELS:
                         st.write(f"  ⏭️ 跳过 {model_name}")
                         continue
                     st.write(f"  🔄 开始率定 {model_name}...")
-                    result = calibrate_model(model_name, calib_precip, calib_evap, calib_flow, calib_upstream)
+                    try:
+                        spatial_data = {'area': catchment_area}
+                        result = calibrate_model_fast(
+                            model_name,
+                            calib_events[0]['precip'],
+                            calib_events[0]['evap'],
+                            calib_events[0]['flow'],
+                            max_iter=max_iter,
+                            spatial_data=spatial_data,
+                            timestep=user_timestep,
+                            algorithm=algorithm,
+                            algo_params=algo_params,
+                            upstream_flow=calib_events[0].get('upstream'),
+                            enable_routing=enable_upstream_routing,
+                            calib_events=calib_events,
+                            warmup_steps=warmup_steps
+                        )
+                    except Exception as e:
+                        st.error(f"  ⚠️ {model_name} 率定异常: {type(e).__name__}: {str(e)}")
+                        import traceback
+                        st.code(traceback.format_exc()[-600:])
+                        result = None
+                    progress_bar.progress((model_idx + 1) / len(RECOMMENDED_MODELS))
                     if result:
                         params, nse, simulated = result
                         calibration_results[model_name] = {
                             "model_name": model_name,
                             "params": params,
                             "nse": nse,
-                            "rmse": calc_rmse(calib_flow, simulated),
-                            "mae": calc_mae(calib_flow, simulated),
-                            "pbias": calc_pbias(calib_flow, simulated),
+                            "rmse": calc_rmse(calib_events[0]['flow'], simulated),
+                            "mae": calc_mae(calib_events[0]['flow'], simulated),
+                            "pbias": calc_pbias(calib_events[0]['flow'], simulated),
                             "simulated": simulated,
-                            "calib_data": (calib_precip, calib_evap, calib_flow),
+                            "calib_data": (calib_events[0]['precip'], calib_events[0]['evap'], calib_events[0]['flow']),
                         }
-                        st.write(f"  ✅ {model_name}: 率定期NSE={nse:.4f}")
+                        st.write(f"  ✅ {model_name}: 率定期平均NSE={nse:.4f}")
                     else:
                         st.write(f"  ❌ {model_name}: 率定返回None")
             
@@ -1725,7 +1771,8 @@ if uploaded_files and len(uploaded_files) > 0:
                     file_data_list,
                     calibration_results,
                     file_simulation_results,
-                    call_minimax
+                    call_minimax,
+                    warmup_hours
                 )
             st.markdown(multifile_report)
             
@@ -1744,68 +1791,140 @@ if uploaded_files and len(uploaded_files) > 0:
             # 连续序列模式：使用代表性洪水进行率定
             file_calibration_results = {}
             
+            # 计算预热期步数
+            if warmup_hours > 0 and user_timestep == 'hourly':
+                warmup_steps = warmup_hours
+            elif warmup_hours > 0:
+                warmup_steps = warmup_hours // 24
+            else:
+                warmup_steps = 0
+            
             if preanalysis_result.selected_events:
-                calib_precip_list = []
-                calib_evap_list = []
-                calib_flow_list = []
+                # 构建率定场次列表
+                calib_events = []
+                _all_upstream_arr = all_upstream_arr if 'all_upstream_arr' in globals() else None
                 for event in preanalysis_result.selected_events:
                     start_idx = max(0, event.start_idx)
                     end_idx = min(len(all_precip_arr), event.end_idx + 1)
-                    calib_precip_list.extend(all_precip_arr[start_idx:end_idx].tolist())
-                    calib_evap_list.extend(all_evap_arr[start_idx:end_idx].tolist())
-                    calib_flow_list.extend(all_flow_arr[start_idx:end_idx].tolist())
-                calib_precip = np.array(calib_precip_list)
-                calib_evap = np.array(calib_evap_list)
-                calib_flow = np.array(calib_flow_list)
-                st.info(f"🤖 使用 {len(preanalysis_result.selected_events)} 场代表性洪水率定，共 {len(calib_precip)} 个时间步")
+                    calib_events.append({
+                        'precip': all_precip_arr[start_idx:end_idx],
+                        'evap': all_evap_arr[start_idx:end_idx],
+                        'flow': all_flow_arr[start_idx:end_idx],
+                        'upstream': _all_upstream_arr[start_idx:end_idx] if enable_upstream_routing and _all_upstream_arr is not None else None
+                    })
+                st.info(f"🤖 使用 {len(calib_events)} 场代表性洪水率定，共 {sum(len(e['flow']) for e in calib_events)} 个时间步" +
+                       (f"，预热期 {warmup_steps} 步" if warmup_steps > 0 else ""))
             else:
-                calib_precip = all_precip_arr
-                calib_evap = all_evap_arr
-                calib_flow = all_flow_arr
+                _all_upstream_arr = all_upstream_arr if 'all_upstream_arr' in globals() else None
+                calib_events = [{
+                    'precip': all_precip_arr,
+                    'evap': all_evap_arr,
+                    'flow': all_flow_arr,
+                    'upstream': _all_upstream_arr if enable_upstream_routing and _all_upstream_arr is not None else None
+                }]
+                st.info(f"📊 整场洪水数据，共 {len(calib_events[0]['flow'])} 个时间步" +
+                       (f"，预热期 {warmup_steps} 步" if warmup_steps > 0 else ""))
             
+            progress_bar = st.progress(0)
             with st.spinner("🤖 AI Agent 正在率定模型..."):
-                for model_name in RECOMMENDED_MODELS:
+                for model_idx, model_name in enumerate(RECOMMENDED_MODELS):
                     if model_name in SKIP_MODELS:
                         continue
-                    result = calibrate_model(model_name, calib_precip, calib_evap, calib_flow)
+                    try:
+                        spatial_data = {'area': catchment_area}
+                        result = calibrate_model_fast(
+                            model_name,
+                            calib_events[0]['precip'],
+                            calib_events[0]['evap'],
+                            calib_events[0]['flow'],
+                            max_iter=max_iter,
+                            spatial_data=spatial_data,
+                            timestep=user_timestep,
+                            algorithm=algorithm,
+                            algo_params=algo_params,
+                            upstream_flow=calib_events[0].get('upstream'),
+                            enable_routing=enable_upstream_routing,
+                            calib_events=calib_events,
+                            warmup_steps=warmup_steps
+                        )
+                    except Exception as e:
+                        st.error(f"  ⚠️ {model_name} 率定异常: {type(e).__name__}: {str(e)}")
+                        result = None
+                    progress_bar.progress((model_idx + 1) / len(RECOMMENDED_MODELS))
                     if result:
                         params, nse, simulated = result
                         calibration_results[model_name] = {
                             "model_name": model_name,
                             "params": params,
                             "nse": nse,
-                            "rmse": calc_rmse(calib_flow, simulated),
-                            "mae": calc_mae(calib_flow, simulated),
-                            "pbias": calc_pbias(calib_flow, simulated),
+                            "rmse": calc_rmse(calib_events[0]['flow'], simulated),
+                            "mae": calc_mae(calib_events[0]['flow'], simulated),
+                            "pbias": calc_pbias(calib_events[0]['flow'], simulated),
                             "simulated": simulated,
-                            "calib_data": (calib_precip, calib_evap, calib_flow),
+                            "calib_data": (calib_events[0]['precip'], calib_events[0]['evap'], calib_events[0]['flow']),
                         }
-                        st.write(f"  ✅ {model_name}: NSE = {nse:.4f}")
+                        st.write(f"  ✅ {model_name}: 平均NSE = {nse:.4f}")
         else:
             # 单文件一场洪水模式
             file_calibration_results = {}
-            calib_precip = all_precip_arr
-            calib_evap = all_evap_arr
-            calib_flow = all_flow_arr
             
-            st.info(f"📊 整场洪水数据，共 {len(calib_precip)} 个时间步")
+            # 计算预热期步数
+            if warmup_hours > 0 and user_timestep == 'hourly':
+                warmup_steps = warmup_hours
+            elif warmup_hours > 0:
+                warmup_steps = warmup_hours // 24
+            else:
+                warmup_steps = 0
             
+            # 构建单场次列表
+            _all_upstream = all_upstream_arr if 'all_upstream_arr' in globals() and all_upstream_arr is not None else None
+            calib_events = [{
+                'precip': all_precip_arr,
+                'evap': all_evap_arr,
+                'flow': all_flow_arr,
+                'upstream': _all_upstream
+            }]
+            
+            st.info(f"📊 整场洪水数据，共 {len(calib_events[0]['flow'])} 个时间步" +
+                   (f"，预热期 {warmup_steps} 步" if warmup_steps > 0 else ""))
+            
+            progress_bar = st.progress(0)
             with st.spinner("🤖 AI Agent 正在率定模型..."):
-                for model_name in RECOMMENDED_MODELS:
+                for model_idx, model_name in enumerate(RECOMMENDED_MODELS):
                     if model_name in SKIP_MODELS:
                         continue
-                    result = calibrate_model(model_name, calib_precip, calib_evap, calib_flow)
+                    try:
+                        spatial_data = {'area': catchment_area}
+                        result = calibrate_model_fast(
+                            model_name,
+                            calib_events[0]['precip'],
+                            calib_events[0]['evap'],
+                            calib_events[0]['flow'],
+                            max_iter=max_iter,
+                            spatial_data=spatial_data,
+                            timestep=user_timestep,
+                            algorithm=algorithm,
+                            algo_params=algo_params,
+                            upstream_flow=calib_events[0].get('upstream'),
+                            enable_routing=enable_upstream_routing,
+                            calib_events=calib_events,
+                            warmup_steps=warmup_steps
+                        )
+                    except Exception as e:
+                        st.error(f"  ⚠️ {model_name} 率定异常: {type(e).__name__}: {str(e)}")
+                        result = None
+                    progress_bar.progress((model_idx + 1) / len(RECOMMENDED_MODELS))
                     if result:
                         params, nse, simulated = result
                         calibration_results[model_name] = {
                             "model_name": model_name,
                             "params": params,
                             "nse": nse,
-                            "rmse": calc_rmse(calib_flow, simulated),
-                            "mae": calc_mae(calib_flow, simulated),
-                            "pbias": calc_pbias(calib_flow, simulated),
+                            "rmse": calc_rmse(calib_events[0]['flow'], simulated),
+                            "mae": calc_mae(calib_events[0]['flow'], simulated),
+                            "pbias": calc_pbias(calib_events[0]['flow'], simulated),
                             "simulated": simulated,
-                            "calib_data": (calib_precip, calib_evap, calib_flow),
+                            "calib_data": (calib_events[0]['precip'], calib_events[0]['evap'], calib_events[0]['flow']),
                         }
                         st.write(f"  ✅ {model_name}: NSE = {nse:.4f}")
         
@@ -2002,7 +2121,8 @@ if uploaded_files and len(uploaded_files) > 0:
                             file_data_list,
                             calibration_results,
                             file_simulation_results,
-                            call_minimax
+                            call_minimax,
+                            warmup_hours
                         )
                     st.markdown(multifile_report)
                     

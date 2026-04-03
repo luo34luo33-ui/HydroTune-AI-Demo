@@ -205,6 +205,8 @@ def calibrate_model_fast(
     algo_params: Dict = None,
     upstream_flow: np.ndarray = None,
     enable_routing: bool = False,
+    calib_events: list = None,
+    warmup_steps: int = 0,
 ) -> Tuple[dict, float, np.ndarray]:
     """
     多算法率定模型参数
@@ -229,6 +231,8 @@ def calibrate_model_fast(
         algo_params: 算法参数字典
         upstream_flow: 上游出库流量序列（可选）
         enable_routing: 是否启用上游汇流演算
+        calib_events: 率定场次数据列表（每个场次包含precip/evap/flow/upstream）
+        warmup_steps: 预热期步数
         
     Returns:
         (最优参数字典, 最优NSE值, 模拟流量数组)
@@ -254,6 +258,9 @@ def calibrate_model_fast(
     
     n_params = len(param_names)
     
+    # 多场次模式：遍历所有率定场次计算平均NSE
+    use_multi_events = calib_events is not None and len(calib_events) > 0
+    
     def objective(params_array):
         if routing_params_added:
             model_params = {k: v for k, v in zip(param_names[:-2], params_array[:-2])}
@@ -265,17 +272,48 @@ def calibrate_model_fast(
         
         if hasattr(model, 'validate_params') and not model.validate_params(model_params):
             return 1e10
+        
         try:
-            simulated = model.run(precip, evap, model_params, spatial_data, temperature)
-            
-            if routing_params_added and upstream_flow is not None and len(upstream_flow) > 0:
-                routed_upstream = muskingum_routing(upstream_flow, k_rout, x_rout)
-                simulated = simulated + routed_upstream
-            
-            nse = calc_nse(observed_flow, simulated)
-            if np.isnan(nse) or np.isinf(nse):
-                return 1e10
-            return -nse
+            if use_multi_events:
+                nse_list = []
+                for event in calib_events:
+                    event_precip = event['precip']
+                    event_evap = event['evap']
+                    event_flow = event['flow']
+                    event_upstream = event.get('upstream')
+                    
+                    simulated = model.run(event_precip, event_evap, model_params, spatial_data, temperature)
+                    
+                    if routing_params_added and event_upstream is not None and len(event_upstream) > 0:
+                        routed_upstream = muskingum_routing(event_upstream, k_rout, x_rout)
+                        simulated = simulated + routed_upstream
+                    
+                    # 抹除预热期
+                    obs = event_flow[warmup_steps:] if warmup_steps > 0 and len(event_flow) > warmup_steps else event_flow
+                    sim = simulated[warmup_steps:] if warmup_steps > 0 and len(simulated) > warmup_steps else simulated
+                    
+                    nse = calc_nse(obs, sim)
+                    if not np.isnan(nse) and not np.isinf(nse):
+                        nse_list.append(nse)
+                
+                avg_nse = np.mean(nse_list) if nse_list else -1e10
+                return -avg_nse
+            else:
+                # 单场次模式（原逻辑）
+                simulated = model.run(precip, evap, model_params, spatial_data, temperature)
+                
+                if routing_params_added and upstream_flow is not None and len(upstream_flow) > 0:
+                    routed_upstream = muskingum_routing(upstream_flow, k_rout, x_rout)
+                    simulated = simulated + routed_upstream
+                
+                # 抹除预热期
+                obs = observed_flow[warmup_steps:] if warmup_steps > 0 and len(observed_flow) > warmup_steps else observed_flow
+                sim = simulated[warmup_steps:] if warmup_steps > 0 and len(simulated) > warmup_steps else simulated
+                
+                nse = calc_nse(obs, sim)
+                if np.isnan(nse) or np.isinf(nse):
+                    return 1e10
+                return -nse
         except Exception:
             return 1e10
     
@@ -300,11 +338,23 @@ def calibrate_model_fast(
         best_params = {k: v for k, v in zip(param_names, best_x)}
     
     try:
-        simulated = model.run(precip, evap, best_params, spatial_data, temperature)
-        if routing_params_added and upstream_flow is not None and len(upstream_flow) > 0:
-            routed_upstream = muskingum_routing(upstream_flow, best_params.get('k_routing', 2.5), 
-                                                best_params.get('x_routing', 0.25))
-            simulated = simulated + routed_upstream
+        if use_multi_events:
+            # 返回第一个场次的模拟结果用于展示
+            first_event = calib_events[0]
+            simulated = model.run(first_event['precip'], first_event['evap'], best_params, spatial_data, temperature)
+            if routing_params_added and first_event.get('upstream') is not None:
+                routed_upstream = muskingum_routing(first_event['upstream'], 
+                                                    best_params.get('k_routing', 2.5), 
+                                                    best_params.get('x_routing', 0.25))
+                simulated = simulated + routed_upstream
+            simulated = simulated[warmup_steps:] if warmup_steps > 0 else simulated
+        else:
+            simulated = model.run(precip, evap, best_params, spatial_data, temperature)
+            if routing_params_added and upstream_flow is not None and len(upstream_flow) > 0:
+                routed_upstream = muskingum_routing(upstream_flow, best_params.get('k_routing', 2.5), 
+                                                    best_params.get('x_routing', 0.25))
+                simulated = simulated + routed_upstream
+            simulated = simulated[warmup_steps:] if warmup_steps > 0 else simulated
     except Exception:
         simulated = np.full_like(observed_flow, np.nan)
         best_nse = -1e10
