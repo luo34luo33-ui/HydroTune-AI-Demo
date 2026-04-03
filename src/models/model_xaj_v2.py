@@ -126,7 +126,7 @@ class XAJModelV2(BaseModel):
         timestep = spatial_data.get('timestep', 'daily')
         return 1 if timestep == 'hourly' else 24
     
-    def run(self, precip, evap, params, spatial_data=None, temperature=None):
+    def run(self, precip, evap, params, spatial_data=None, temperature=None, warmup_steps=0):
         global XAJ_AVAILABLE, run_new_xaj
         
         if not XAJ_AVAILABLE:
@@ -147,7 +147,7 @@ class XAJModelV2(BaseModel):
         p_and_e[:, 0, 1] = evap
         
         try:
-            q_sim, es = run_new_xaj(p_and_e, full_params, warmup_length=0, return_state=False)
+            q_sim, es = run_new_xaj(p_and_e, full_params, warmup_length=warmup_steps, return_state=False)
             
             runoff_mm = q_sim[:, 0, 0]
             seconds_per_step = timestep_hours * 3600
