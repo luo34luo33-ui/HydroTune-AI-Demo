@@ -1420,17 +1420,24 @@ if uploaded_files and len(uploaded_files) > 0:
                     progress_bar.progress((model_idx + 1) / len(RECOMMENDED_MODELS))
                     if result:
                         params, nse, simulated = result
+                        # 计算指标时需要剔除预热期数据
+                        if warmup_steps > 0 and len(calib_events[0]['flow']) > warmup_steps:
+                            obs_for_metric = calib_events[0]['flow'][warmup_steps:]
+                            sim_for_metric = simulated[warmup_steps:]
+                        else:
+                            obs_for_metric = calib_events[0]['flow']
+                            sim_for_metric = simulated
                         calibration_results[model_name] = {
                             "model_name": model_name,
                             "params": params,
-                            "nse": nse,
-                            "rmse": calc_rmse(calib_events[0]['flow'], simulated),
-                            "mae": calc_mae(calib_events[0]['flow'], simulated),
-                            "pbias": calc_pbias(calib_events[0]['flow'], simulated),
+                            "nse": calc_nse(obs_for_metric, sim_for_metric),
+                            "kge": calc_kge(obs_for_metric, sim_for_metric),
+                            "rmse": calc_rmse(obs_for_metric, sim_for_metric),
+                            "pbias": calc_pbias(obs_for_metric, sim_for_metric),
                             "simulated": simulated,
                             "calib_data": (calib_events[0]['precip'], calib_events[0]['evap'], calib_events[0]['flow']),
                         }
-                        st.write(f"  ✅ {model_name}: 率定期平均NSE={nse:.4f}")
+                        st.write(f"  ✅ {model_name}: 率定期平均NSE={calibration_results[model_name]['nse']:.4f}")
                     else:
                         st.write(f"  ❌ {model_name}: 率定返回None")
             
