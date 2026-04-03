@@ -315,17 +315,34 @@ with st.sidebar:
     # 列名配置
     st.header("📋 列名配置")
     with st.expander("配置数据列名映射"):
-        st.write("将原始列名映射到标准列名（date, precip, evap, flow）：")
-        date_col = st.text_input("时间列名", value="date", key="date_col")
-        precip_col = st.text_input("降水列名", value="precip", key="precip_col")
-        evap_col = st.text_input("蒸发列名（可选）", value="evap", key="evap_col")
-        flow_col = st.text_input("流量列名", value="flow", key="flow_col")
+        st.write("将原始列名映射到标准列名（date, precip, evap, flow, upstream）：")
+        
+        col_mapping_presets = st.radio(
+            "列名预设",
+            options=["默认", "多场洪水戈枕(A5)", "自定义"],
+            index=0,
+            horizontal=True
+        )
+        
+        if col_mapping_presets == "多场洪水戈枕(A5)":
+            date_col = st.text_input("时间列名", value="Time", key="date_col")
+            precip_col = st.text_input("降水列名", value="avg_rain", key="precip_col")
+            evap_col = st.text_input("蒸发列名", value="E0", key="evap_col")
+            flow_col = st.text_input("流量列名", value="GZ_in", key="flow_col")
+            upstream_col = st.text_input("上游出库列名", value="GB_out", key="upstream_col")
+        else:
+            date_col = st.text_input("时间列名", value="date", key="date_col")
+            precip_col = st.text_input("降水列名", value="precip", key="precip_col")
+            evap_col = st.text_input("蒸发列名", value="evap", key="evap_col")
+            flow_col = st.text_input("流量列名", value="flow", key="flow_col")
+            upstream_col = st.text_input("上游出库列名", value="", key="upstream_col")
     
     column_mapping = {
         'date': date_col if date_col else 'date',
         'precip': precip_col if precip_col else 'precip',
         'evap': evap_col if evap_col else 'evap',
         'flow': flow_col if flow_col else 'flow',
+        'upstream': upstream_col if upstream_col else "",
     }
 
     st.divider()
@@ -345,28 +362,66 @@ with st.sidebar:
         )
         column_mapping['upstream'] = upstream_col if upstream_col else ""
         
-        with st.expander("马斯京根参数"):
-            st.caption("参数将跟随水文模型一起率定")
-            k_routing = st.slider(
-                "Muskingum传播时间k",
-                min_value=0.5,
-                max_value=5.0,
-                value=2.5,
+        routing_version = st.radio(
+            "上游出库路由算法版本",
+            options=["V1简单版", "V2多级演进"],
+            index=1,
+            horizontal=True,
+            help="V1: 简单单级Muskingum; V2: 多级Muskingum演进(带n个河段)"
+        )
+        
+        if routing_version == "V2多级演进":
+            st.caption("V2参数 - 将跟随水文模型一起率定")
+            k_res = st.slider(
+                "K_res(传播时间)",
+                min_value=2.0,
+                max_value=8.0,
+                value=4.88,
                 step=0.1,
-                help="河道传播时间参数"
+                help="Muskingum传播时间参数"
             )
-            x_routing = st.slider(
-                "Muskingum权重因子x",
-                min_value=0.0,
-                max_value=0.5,
-                value=0.25,
-                step=0.05,
-                help="权重因子，0为蓄水量演算，0.5为流量演算"
+            x_res = st.slider(
+                "X_res(权重因子)",
+                min_value=0.05,
+                max_value=0.3,
+                value=0.14,
+                step=0.01,
+                help="Muskingum权重因子"
             )
-            st.caption(f"当前参数: k={k_routing}, x={x_routing}")
+            n_reaches = st.slider(
+                "n(汇流河段数)",
+                min_value=1,
+                max_value=10,
+                value=5,
+                step=1,
+                help="汇流河段级数"
+            )
+            k_routing, x_routing = k_res, x_res
+            routing_params = {"K_res": k_res, "X_res": x_res, "n": n_reaches, "use_v2": True}
+        else:
+            with st.expander("V1马斯京根参数"):
+                st.caption("参数将跟随水文模型一起率定")
+                k_routing = st.slider(
+                    "Muskingum传播时间k",
+                    min_value=0.5,
+                    max_value=5.0,
+                    value=2.5,
+                    step=0.1,
+                    help="河道传播时间参数"
+                )
+                x_routing = st.slider(
+                    "Muskingum权重因子x",
+                    min_value=0.0,
+                    max_value=0.5,
+                    value=0.25,
+                    step=0.05,
+                    help="权重因子，0为蓄水量演算，0.5为流量演算"
+                )
+            routing_params = {"use_v2": False}
     else:
         column_mapping['upstream'] = ""
         k_routing, x_routing = 2.5, 0.25
+        routing_params = {"use_v2": False}
 
     st.divider()
 
