@@ -1491,13 +1491,20 @@ if uploaded_files and len(uploaded_files) > 0:
                             safe_params,
                             spatial_data
                         )
+                        # 应用预热期处理
+                        if warmup_steps > 0 and len(file_data['flow']) > warmup_steps:
+                            obs_for_metric = file_data['flow'][warmup_steps:]
+                            sim_for_metric = simulated[warmup_steps:]
+                        else:
+                            obs_for_metric = file_data['flow']
+                            sim_for_metric = simulated
                         file_simulation_results[model_name][file_name] = {
                             "model_name": model_name,
                             "params": safe_params,
-                            "nse": calc_nse(file_data['flow'], simulated),
-                            "kge": calc_kge(file_data['flow'], simulated),
-                            "rmse": calc_rmse(file_data['flow'], simulated),
-                            "pbias": calc_pbias(file_data['flow'], simulated),
+                            "nse": calc_nse(obs_for_metric, sim_for_metric),
+                            "kge": calc_kge(obs_for_metric, sim_for_metric),
+                            "rmse": calc_rmse(obs_for_metric, sim_for_metric),
+                            "pbias": calc_pbias(obs_for_metric, sim_for_metric),
                             "simulated": simulated,
                             "observed": file_data['flow'],
                             "precip": file_data['precip'],
@@ -1513,13 +1520,19 @@ if uploaded_files and len(uploaded_files) > 0:
                                     default_xaj_params,
                                     spatial_data
                                 )
+                                if warmup_steps > 0 and len(file_data['flow']) > warmup_steps:
+                                    obs_for_metric = file_data['flow'][warmup_steps:]
+                                    sim_for_metric = simulated[warmup_steps:]
+                                else:
+                                    obs_for_metric = file_data['flow']
+                                    sim_for_metric = simulated
                                 file_simulation_results[model_name][file_name] = {
                                     "model_name": model_name,
                                     "params": default_xaj_params,
-                                    "nse": calc_nse(file_data['flow'], simulated),
-                                    "kge": calc_kge(file_data['flow'], simulated),
-                                    "rmse": calc_rmse(file_data['flow'], simulated),
-                                    "pbias": calc_pbias(file_data['flow'], simulated),
+                                    "nse": calc_nse(obs_for_metric, sim_for_metric),
+                                    "kge": calc_kge(obs_for_metric, sim_for_metric),
+                                    "rmse": calc_rmse(obs_for_metric, sim_for_metric),
+                                    "pbias": calc_pbias(obs_for_metric, sim_for_metric),
                                     "simulated": simulated,
                                     "observed": file_data['flow'],
                                     "precip": file_data['precip'],
