@@ -43,6 +43,8 @@ def calc_rmse(observed: np.ndarray, simulated: np.ndarray) -> float:
     """计算均方根误差"""
     mask = ~(np.isnan(observed) | np.isnan(simulated))
     obs, sim = observed[mask], simulated[mask]
+    if len(obs) == 0:
+        return np.nan
     return np.sqrt(np.mean((obs - sim) ** 2))
 
 
@@ -50,6 +52,8 @@ def calc_mae(observed: np.ndarray, simulated: np.ndarray) -> float:
     """计算平均绝对误差"""
     mask = ~(np.isnan(observed) | np.isnan(simulated))
     obs, sim = observed[mask], simulated[mask]
+    if len(obs) == 0:
+        return np.nan
     return np.mean(np.abs(obs - sim))
 
 
@@ -57,7 +61,12 @@ def calc_pbias(observed: np.ndarray, simulated: np.ndarray) -> float:
     """计算百分比偏差"""
     mask = ~(np.isnan(observed) | np.isnan(simulated))
     obs, sim = observed[mask], simulated[mask]
-    return 100 * np.sum(obs - sim) / np.sum(obs)
+    if len(obs) == 0:
+        return np.nan
+    obs_sum = np.sum(obs)
+    if obs_sum == 0:
+        return np.nan
+    return 100 * np.sum(obs - sim) / obs_sum
 
 
 def calc_kge(observed: np.ndarray, simulated: np.ndarray) -> float:

@@ -1,0 +1,2 @@
+模型,t0_is,t0_boc,t0_soc_uo,t0_soc_lo,t0_soh_uo,t0_soh_lo,t1_is,t1_boc,t1_soc,t1_soh,t2_is,t2_boc,t2_soc,t2_soh,t3_is,t3_soc
+Tank水箱模型(完整版),50.0,0.3,0.3,0.3,87.5,25.0,50.0,0.25,0.25,50.0,50.0,0.25,0.25,50.0,50.0,0.25

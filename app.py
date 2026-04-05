@@ -18,7 +18,7 @@ from src.data_agent import (
 )
 from src.hydro_calc import (
     calibrate_model_fast, calc_nse, calc_rmse, calc_mae, calc_pbias, calc_kge,
-    get_model_param_info, generate_param_table
+    get_model_param_info, generate_param_table, muskingum_routing
 )
 from src.data_preanalysis import (
     DataPreAnalyzer, PreAnalysisResult, FloodEvent as PAFloodEvent,
@@ -233,8 +233,49 @@ st.caption("上传数据 → 智能清洗 → 多模型率定 → 自动报告")
 # ============================================================
 # 侧边栏
 # ============================================================
-RECOMMENDED_MODELS = ['Tank水箱模型(完整版)', 'HBV模型(完整版)', '新安江模型2']
+RECOMMENDED_MODELS = ['新安江模型2']  # 暂时只保留新安江模型
 SKIP_MODELS = []
+
+
+def apply_upstream_routing(simulated, upstream_arr, k_routing, x_routing, warmup_steps=0):
+    """将上游流量经过马斯京根演算后叠加到出口断面
+    
+    注意：此函数不处理预热期，由调用方在外部统一处理
+    
+    Args:
+        simulated: 模型模拟的出口流量
+        upstream_arr: 上游来水流量
+        k_routing: Muskingum传播时间
+        x_routing: Muskingum权重因子
+        warmup_steps: 预热期步数（未使用，保留参数兼容性）
+        
+    Returns:
+        叠加汇流后的流量序列
+    """
+    if upstream_arr is None:
+        return simulated
+    
+    upstream_arr = np.asarray(upstream_arr)
+    if upstream_arr.size == 0:
+        return simulated
+    
+    # 检查长度一致性
+    if len(upstream_arr) != len(simulated):
+        return simulated
+    
+    # 不再在内部剔除预热期，由调用方统一处理
+    # 再次检查长度
+    if len(upstream_arr) != len(simulated) or upstream_arr.size == 0:
+        return simulated
+    
+    # 马斯京根演算
+    routed = muskingum_routing(upstream_arr, k_routing, x_routing)
+    
+    # 标记上游汇流已叠加
+    st.caption(f"✓ 上游汇流已叠加 (k={k_routing}, x={x_routing})")
+    
+    return simulated + routed
+
 
 with st.sidebar:
     st.markdown("### 🤖 AI Agent 状态")
@@ -245,7 +286,7 @@ with st.sidebar:
     st.markdown("### 📊 模型状态")
     from src.models.registry import ModelRegistry
     all_models = ModelRegistry.list_models()
-    check_models = ['Tank水箱模型(完整版)', 'HBV模型(完整版)', '新安江模型2']
+    check_models = ['新安江模型2']  # 暂时只检查新安江模型
     for model in check_models:
         if model in all_models:
             st.success(f"✅ {model}")
@@ -311,38 +352,110 @@ with st.sidebar:
         warmup_hours = 0
 
     st.divider()
+    
+    # 直接导入参数模式
+    st.header("📥 直接导入参数")
+    use_imported_params = st.radio(
+        "参数模式",
+        options=["率定参数", "导入参数"],
+        index=0,
+        horizontal=True,
+        help="选择'导入参数'时直接使用参数文件，不进行率定"
+    )
+    
+    imported_params = {}
+    
+    if use_imported_params == "导入参数":
+        st.success("📥 导入参数模式：直接使用参数文件")
+        
+        st.markdown("**Tank水箱模型参数：**")
+        tank_param_file = st.file_uploader(
+            "上传Tank模型参数文件",
+            type=["csv"],
+            key="tank_param_file"
+        )
+        if tank_param_file is not None:
+            try:
+                import pandas as pd
+                tank_df = pd.read_csv(tank_param_file)
+                tank_params = {col: float(tank_df[col].values[0]) for col in tank_df.columns if col != '模型'}
+                imported_params['Tank水箱模型(完整版)'] = tank_params
+                st.success(f"✅ Tank模型参数导入成功: {tank_params}")
+            except Exception as e:
+                st.error(f" Tank参数解析失败: {e}")
+        
+        st.markdown("**HBV模型参数：**")
+        hbv_param_file = st.file_uploader(
+            "上传HBV模型参数文件",
+            type=["csv"],
+            key="hbv_param_file"
+        )
+        if hbv_param_file is not None:
+            try:
+                import pandas as pd
+                hbv_df = pd.read_csv(hbv_param_file)
+                hbv_params = {col: float(hbv_df[col].values[0]) for col in hbv_df.columns if col != '模型'}
+                imported_params['HBV模型(完整版)'] = hbv_params
+                st.success(f"✅ HBV模型参数导入成功: {hbv_params}")
+            except Exception as e:
+                st.error(f" HBV参数解析失败: {e}")
+        
+        st.markdown("**新安江模型参数（含马斯京根）：**")
+        xaj_param_file = st.file_uploader(
+            "上传新安江模型参数文件",
+            type=["csv"],
+            key="xaj_param_file"
+        )
+        if xaj_param_file is not None:
+            try:
+                import pandas as pd
+                import io
+                
+                # 读取文件内容到内存
+                file_content = xaj_param_file.getvalue()
+                
+                xaj_df = None
+                # 尝试多种编码
+                for encoding in ['utf-8', 'gbk', 'gb2312', 'latin1']:
+                    try:
+                        xaj_df = pd.read_csv(io.BytesIO(file_content), encoding=encoding)
+                        break
+                    except (UnicodeDecodeError, pd.errors.EmptyDataError):
+                        continue
+                
+                if xaj_df is None or xaj_df.empty:
+                    st.warning("⚠️ CSV文件为空，请检查文件格式")
+                elif len(xaj_df.columns) < 2:
+                    st.warning(f"⚠️ CSV文件列数不足: {xaj_df.columns}")
+                else:
+                    xaj_params = {col: float(xaj_df[col].values[0]) for col in xaj_df.columns if col != '模型'}
+                    imported_params['新安江模型2'] = xaj_params
+                    st.success(f"✅ 新安江模型参数导入成功: {xaj_params}")
+                    
+                    # 读取马斯京根参数 - 使用 session_state 保存
+                    if 'k_routing' in xaj_df.columns and 'x_routing' in xaj_df.columns:
+                        st.session_state['imported_k_routing'] = float(xaj_df['k_routing'].values[0])
+                        st.session_state['imported_x_routing'] = float(xaj_df['x_routing'].values[0])
+                        st.success(f"✅ 马斯京根参数导入成功: k={st.session_state['imported_k_routing']}, x={st.session_state['imported_x_routing']}")
+            except Exception as e:
+                st.error(f" 新安江参数解析失败: {e}")
 
     # 列名配置
     st.header("📋 列名配置")
     with st.expander("配置数据列名映射"):
-        st.write("将原始列名映射到标准列名（date, precip, evap, flow, upstream）：")
+        st.write("请输入原始数据列名（映射到标准列名：date, precip, evap, flow, upstream）：")
         
-        col_mapping_presets = st.radio(
-            "列名预设",
-            options=["默认", "多场洪水戈枕(A5)", "自定义"],
-            index=0,
-            horizontal=True
-        )
-        
-        if col_mapping_presets == "多场洪水戈枕(A5)":
-            date_col = st.text_input("时间列名", value="Time", key="date_col")
-            precip_col = st.text_input("降水列名", value="avg_rain", key="precip_col")
-            evap_col = st.text_input("蒸发列名", value="E0", key="evap_col")
-            flow_col = st.text_input("流量列名", value="GZ_in", key="flow_col")
-            upstream_col = st.text_input("上游出库列名", value="GB_out", key="upstream_col")
-        else:
-            date_col = st.text_input("时间列名", value="date", key="date_col")
-            precip_col = st.text_input("降水列名", value="precip", key="precip_col")
-            evap_col = st.text_input("蒸发列名", value="evap", key="evap_col")
-            flow_col = st.text_input("流量列名", value="flow", key="flow_col")
-            upstream_col = st.text_input("上游出库列名", value="", key="upstream_col")
+        date_col = st.text_input("时间列名", value="date", key="date_col")
+        precip_col = st.text_input("降水列名", value="precip", key="precip_col")
+        evap_col = st.text_input("蒸发列名", value="evap", key="evap_col")
+        flow_col = st.text_input("流量列名", value="flow", key="flow_col")
     
     column_mapping = {
         'date': date_col if date_col else 'date',
         'precip': precip_col if precip_col else 'precip',
         'evap': evap_col if evap_col else 'evap',
         'flow': flow_col if flow_col else 'flow',
-        'upstream': upstream_col if upstream_col else "",
+        'upstream': "",
     }
 
     st.divider()
@@ -361,67 +474,16 @@ with st.sidebar:
             help="上游断面流量列名（数据需在同一文件中）"
         )
         column_mapping['upstream'] = upstream_col if upstream_col else ""
-        
-        routing_version = st.radio(
-            "上游出库路由算法版本",
-            options=["V1简单版", "V2多级演进"],
-            index=1,
-            horizontal=True,
-            help="V1: 简单单级Muskingum; V2: 多级Muskingum演进(带n个河段)"
-        )
-        
-        if routing_version == "V2多级演进":
-            st.caption("V2参数 - 将跟随水文模型一起率定")
-            k_res = st.slider(
-                "K_res(传播时间)",
-                min_value=2.0,
-                max_value=8.0,
-                value=4.88,
-                step=0.1,
-                help="Muskingum传播时间参数"
-            )
-            x_res = st.slider(
-                "X_res(权重因子)",
-                min_value=0.05,
-                max_value=0.3,
-                value=0.14,
-                step=0.01,
-                help="Muskingum权重因子"
-            )
-            n_reaches = st.slider(
-                "n(汇流河段数)",
-                min_value=1,
-                max_value=10,
-                value=5,
-                step=1,
-                help="汇流河段级数"
-            )
-            k_routing, x_routing = k_res, x_res
-            routing_params = {"K_res": k_res, "X_res": x_res, "n": n_reaches, "use_v2": True}
-        else:
-            with st.expander("V1马斯京根参数"):
-                st.caption("参数将跟随水文模型一起率定")
-                k_routing = st.slider(
-                    "Muskingum传播时间k",
-                    min_value=0.5,
-                    max_value=5.0,
-                    value=2.5,
-                    step=0.1,
-                    help="河道传播时间参数"
-                )
-                x_routing = st.slider(
-                    "Muskingum权重因子x",
-                    min_value=0.0,
-                    max_value=0.5,
-                    value=0.25,
-                    step=0.05,
-                    help="权重因子，0为蓄水量演算，0.5为流量演算"
-                )
-            routing_params = {"use_v2": False}
+        st.caption("✓ 上游汇流参数将在率定时自动优化")
     else:
         column_mapping['upstream'] = ""
+
+    # 使用导入的参数或默认值
+    if 'imported_k_routing' in st.session_state and 'imported_x_routing' in st.session_state:
+        k_routing = st.session_state['imported_k_routing']
+        x_routing = st.session_state['imported_x_routing']
+    else:
         k_routing, x_routing = 2.5, 0.25
-        routing_params = {"use_v2": False}
 
     st.divider()
 
@@ -1002,7 +1064,7 @@ if uploaded_files and len(uploaded_files) > 0:
             dates_for_analysis = pd.date_range(
                 start=dates_for_analysis.iloc[0] if not pd.isna(dates_for_analysis.iloc[0]) else '2020-01-01',
                 periods=len(all_precip),
-                freq='H' if user_timestep == 'hourly' else 'D'
+                freq='h' if user_timestep == 'hourly' else 'D'
             )
         
         # 确保dates_for_analysis是有效的Series
@@ -1395,6 +1457,14 @@ if uploaded_files and len(uploaded_files) > 0:
                 evap_arr = np.array(df['evap'].values) if 'evap' in df.columns else np.zeros(len(df))
                 upstream_arr = np.array(df['upstream'].values) if 'upstream' in df.columns and enable_upstream_routing else None
                 
+                # 检查数据是否有效
+                precip_sum = np.sum(precip_arr)
+                flow_sum = np.sum(flow_arr)
+                if precip_sum == 0:
+                    st.warning(f"⚠️ {file_name}: 降水数据全为0，请检查列名配置")
+                if flow_sum == 0:
+                    st.warning(f"⚠️ {file_name}: 流量数据全为0，请检查列名配置")
+                
                 file_data_list.append({
                     'file_name': file_name,
                     'precip': precip_arr,
@@ -1438,13 +1508,59 @@ if uploaded_files and len(uploaded_files) > 0:
                 }
                 calib_events.append(event)
             
-            st.info(f"📊 率定{len(calib_events)}场，每场 {sum(len(e['flow']) for e in calib_events)} 个时间步" + 
+            avg_steps = sum(len(e['flow']) for e in calib_events) // len(calib_events) if calib_events else 0
+            st.info(f"📊 率定{len(calib_events)}场，每场约 {avg_steps} 个时间步" + 
                    (f"，预热期 {warmup_steps} 步" if warmup_steps > 0 else ""))
             
             # 4. 率定模型（多场次模式）
             import traceback
             progress_bar = st.progress(0)
-            with st.spinner("🤖 AI Agent 正在率定模型 (多场次平均NSE)..."):
+            
+            # 判断是否使用导入的参数（侧边栏选择"导入参数"时）
+            if use_imported_params == "导入参数" and imported_params:
+                st.info("📥 使用导入的参数，跳过率定环节")
+                for model_idx, model_name in enumerate(RECOMMENDED_MODELS):
+                    if model_name in SKIP_MODELS:
+                        st.write(f"  ⏭️ 跳过 {model_name}")
+                        continue
+                    if model_name in imported_params:
+                        st.write(f"  📥 使用导入参数 {model_name}...")
+                        params = imported_params[model_name]
+                        try:
+                            model = ModelRegistry.get_model(model_name)
+                            simulated = model.run(
+                                calib_events[0]['precip'],
+                                calib_events[0]['evap'],
+                                params,
+                                {'area': catchment_area, 'timestep': user_timestep}
+                            )
+                            # 剔除预热期数据计算指标
+                            if warmup_steps > 0 and len(calib_events[0]['flow']) > warmup_steps:
+                                obs_for_metric = calib_events[0]['flow'][warmup_steps:]
+                                sim_for_metric = simulated[warmup_steps:]
+                            else:
+                                obs_for_metric = calib_events[0]['flow']
+                                sim_for_metric = simulated
+                            calibration_results[model_name] = {
+                                "model_name": model_name,
+                                "params": params,
+                                "nse": calc_nse(obs_for_metric, sim_for_metric),
+                                "kge": calc_kge(obs_for_metric, sim_for_metric),
+                                "rmse": calc_rmse(obs_for_metric, sim_for_metric),
+                                "pbias": calc_pbias(obs_for_metric, sim_for_metric),
+                                "simulated": simulated,
+                                "calib_data": (calib_events[0]['precip'], calib_events[0]['evap'], calib_events[0]['flow']),
+                            }
+                            st.write(f"  ✅ {model_name}: NSE={calibration_results[model_name]['nse']:.4f}")
+                        except Exception as e:
+                            st.error(f"  ⚠️ {model_name} 运行异常: {type(e).__name__}: {str(e)}")
+                            import traceback
+                            st.code(traceback.format_exc()[-600:])
+                    else:
+                        st.warning(f"  ⚠️ 未找到 {model_name} 的导入参数")
+                    progress_bar.progress((model_idx + 1) / len(RECOMMENDED_MODELS))
+            else:
+                st.info("🤖 正在进行模型率定...")
                 for model_idx, model_name in enumerate(RECOMMENDED_MODELS):
                     if model_name in SKIP_MODELS:
                         st.write(f"  ⏭️ 跳过 {model_name}")
@@ -1501,10 +1617,11 @@ if uploaded_files and len(uploaded_files) > 0:
             calib_file_names = set([f['file_name'] for f in calib_files])
             
             default_xaj_params = {
-                'k': 0.8, 'b': 0.3, 'im': 0.01,
-                'um': 20.0, 'lm': 70.0, 'dm': 60.0, 'c': 0.15,
-                'sm': 20.0, 'ex': 1.5, 'ki': 0.3, 'kg': 0.4,
-                'cs': 0.8, 'l': 1, 'ci': 0.8, 'cg': 0.98,
+                'K': 0.8, 'B': 0.3, 'IM': 0.01,
+                'WUM': 20.0, 'WLM': 70.0, 'WM': 150.0, 'C': 0.15,
+                'SM': 20.0, 'EX': 1.5, 'KI': 0.3, 'KG': 0.4,
+                'CS': 0.8, 'L': 1, 'CI': 0.8, 'CG': 0.98,
+                'K_res': 4.88, 'X_res': 0.14, 'n': 5,
             }
             
             for model_name, calib_result in calibration_results.items():
@@ -1520,29 +1637,16 @@ if uploaded_files and len(uploaded_files) > 0:
                     
                     # 对XAJ模型使用安全的参数
                     if model_name == '新安江模型2':
-                        safe_params = default_xaj_params.copy()
-                        # 尝试使用率定的部分参数
-                        safe_params['k'] = params.get('k', 0.8)
-                        safe_params['b'] = params.get('b', 0.3)
-                        safe_params['im'] = params.get('im', 0.01)
-                        safe_params['um'] = params.get('um', 20.0)
-                        safe_params['lm'] = params.get('lm', 70.0)
-                        safe_params['dm'] = params.get('dm', 60.0)
-                        safe_params['c'] = params.get('c', 0.15)
-                        safe_params['ex'] = params.get('ex', 1.5)
+                        safe_params = params.copy()
                         # 确保 ki + kg < 0.9
-                        ki = min(params.get('ki', 0.3), 0.45)
-                        kg = min(params.get('kg', 0.3), 0.45)
+                        ki = min(safe_params.get('KI', 0.3), 0.45)
+                        kg = min(safe_params.get('KG', 0.3), 0.45)
                         if ki + kg >= 0.9:
                             ki = 0.3
                             kg = 0.3
-                        safe_params['ki'] = ki
-                        safe_params['kg'] = kg
-                        safe_params['sm'] = max(params.get('sm', 20.0), 5.0)
-                        safe_params['cs'] = params.get('cs', 0.8)
-                        safe_params['l'] = params.get('l', 1)
-                        safe_params['ci'] = params.get('ci', 0.8)
-                        safe_params['cg'] = params.get('cg', 0.98)
+                        safe_params['KI'] = ki
+                        safe_params['KG'] = kg
+                        safe_params['Area'] = catchment_area
                     else:
                         safe_params = params.copy()
                     
@@ -1551,10 +1655,25 @@ if uploaded_files and len(uploaded_files) > 0:
                             file_data['precip'],
                             file_data['evap'],
                             safe_params,
-                            spatial_data
+                            {'area': catchment_area}  # 简化spatial_data，只传area
                         )
+                        st.caption(f"DEBUG: {file_name} - precip len={len(file_data['precip'])}, result len={len(simulated) if simulated is not None else 'None'}")
+                        # 检查模拟结果是否有效
+                        if simulated is None or len(simulated) == 0:
+                            st.error(f"  ❌ {file_name}/{model_name}: 模型返回空结果")
+                            raise ValueError(f"模型返回空结果: len={len(simulated) if simulated is not None else 'None'}")
+                        
+                        # 上游汇流叠加
+                        upstream_arr = file_data.get('upstream')
+                        if enable_upstream_routing and upstream_arr is not None and len(simulated) > 0:
+                            simulated = apply_upstream_routing(
+                                simulated, upstream_arr, k_routing, x_routing
+                            )
                         # 应用预热期处理
-                        if warmup_steps > 0 and len(file_data['flow']) > warmup_steps:
+                        if len(simulated) == 0:
+                            sim_for_metric = np.zeros_like(file_data['flow'])
+                            obs_for_metric = file_data['flow']
+                        elif warmup_steps > 0 and len(file_data['flow']) > warmup_steps:
                             obs_for_metric = file_data['flow'][warmup_steps:]
                             sim_for_metric = simulated[warmup_steps:]
                         else:
@@ -1571,6 +1690,7 @@ if uploaded_files and len(uploaded_files) > 0:
                             "observed": file_data['flow'],
                             "precip": file_data['precip'],
                             "is_calib": is_calib,
+                            "upstream_routed": enable_upstream_routing and upstream_arr is not None,
                         }
                     except Exception as e:
                         # 如果失败，使用默认参数
@@ -1582,25 +1702,51 @@ if uploaded_files and len(uploaded_files) > 0:
                                     default_xaj_params,
                                     spatial_data
                                 )
-                                if warmup_steps > 0 and len(file_data['flow']) > warmup_steps:
+                                # 上游汇流叠加
+                                upstream_arr = file_data.get('upstream')
+                                if enable_upstream_routing and upstream_arr is not None:
+                                    simulated = apply_upstream_routing(
+                                        simulated, upstream_arr, k_routing, x_routing
+                                    )
+                                # 检查模拟结果是否有效（全0或长度为0）
+                                if len(simulated) == 0 or np.sum(np.abs(simulated)) == 0:
+                                    sim_for_metric = np.zeros_like(file_data['flow'])
+                                    obs_for_metric = file_data['flow']
+                                elif warmup_steps > 0 and len(file_data['flow']) > warmup_steps:
                                     obs_for_metric = file_data['flow'][warmup_steps:]
                                     sim_for_metric = simulated[warmup_steps:]
                                 else:
                                     obs_for_metric = file_data['flow']
                                     sim_for_metric = simulated
-                                file_simulation_results[model_name][file_name] = {
-                                    "model_name": model_name,
-                                    "params": default_xaj_params,
-                                    "nse": calc_nse(obs_for_metric, sim_for_metric),
-                                    "kge": calc_kge(obs_for_metric, sim_for_metric),
-                                    "rmse": calc_rmse(obs_for_metric, sim_for_metric),
-                                    "pbias": calc_pbias(obs_for_metric, sim_for_metric),
-                                    "simulated": simulated,
-                                    "observed": file_data['flow'],
-                                    "precip": file_data['precip'],
-                                    "is_calib": is_calib,
-                                }
-                                st.warning(f"  ⚠️ {file_name}/{model_name}: 使用默认参数")
+                                
+                                if np.sum(np.abs(simulated)) == 0:
+                                    file_simulation_results[model_name][file_name] = {
+                                        "model_name": model_name,
+                                        "params": default_xaj_params,
+                                        "nse": -999,
+                                        "kge": -999,
+                                        "rmse": -999,
+                                        "pbias": -999,
+                                        "simulated": np.zeros_like(file_data['flow']),
+                                        "observed": file_data['flow'],
+                                        "precip": file_data['precip'],
+                                        "is_calib": is_calib,
+                                    }
+                                    st.warning(f"  ⚠️ {file_name}/{model_name}: 模拟结果全0")
+                                else:
+                                    file_simulation_results[model_name][file_name] = {
+                                        "model_name": model_name,
+                                        "params": default_xaj_params,
+                                        "nse": calc_nse(obs_for_metric, sim_for_metric),
+                                        "kge": calc_kge(obs_for_metric, sim_for_metric),
+                                        "rmse": calc_rmse(obs_for_metric, sim_for_metric),
+                                        "pbias": calc_pbias(obs_for_metric, sim_for_metric),
+                                        "simulated": simulated,
+                                        "observed": file_data['flow'],
+                                        "precip": file_data['precip'],
+                                        "is_calib": is_calib,
+                                    }
+                                    st.warning(f"  ⚠️ {file_name}/{model_name}: 使用默认参数")
                             else:
                                 file_simulation_results[model_name][file_name] = {
                                     "model_name": model_name,
@@ -1689,11 +1835,19 @@ if uploaded_files and len(uploaded_files) > 0:
                 precip_arr = np.nan_to_num(precip_arr, nan=0.0, posinf=0.0, neginf=0.0)
                 flow_arr = np.nan_to_num(flow_arr, nan=0.0, posinf=0.0, neginf=0.0)
                 
+                # 剔除预热期数据
+                if warmup_steps > 0 and len(flow_arr) > warmup_steps:
+                    flow_arr_plot = flow_arr[warmup_steps:]
+                    precip_arr_plot = precip_arr[warmup_steps:]
+                else:
+                    flow_arr_plot = flow_arr
+                    precip_arr_plot = precip_arr
+                
                 event_type = "率定" if is_calib else "验证"
-                ax.plot(flow_arr, "k-", label="实测", linewidth=2.5)
+                ax.plot(flow_arr_plot, "k-", label="实测", linewidth=2.5)
                 
                 ax2 = ax.twinx()
-                ax2.bar(range(len(precip_arr)), precip_arr, color='#87CEEB', alpha=0.5, width=1, label='降水')
+                ax2.bar(range(len(precip_arr_plot)), precip_arr_plot, color='#87CEEB', alpha=0.5, width=1, label='降水')
                 ax2.set_ylabel("降水 (mm)", fontsize=14, color='black')
                 ax2.tick_params(axis='y', labelcolor='black', labelsize=11)
                 ax2.invert_yaxis()
@@ -1711,14 +1865,19 @@ if uploaded_files and len(uploaded_files) > 0:
                             st.warning(f"⚠️ {file_name}/{model_name}: 模拟结果为空，跳过绘制")
                             continue
                         simulated = np.nan_to_num(simulated, nan=0.0, posinf=0.0, neginf=0.0)
-                        simulated_list.append(simulated)
+                        # 剔除预热期数据
+                        if warmup_steps > 0 and len(simulated) > warmup_steps:
+                            simulated_plot = simulated[warmup_steps:]
+                        else:
+                            simulated_plot = simulated
+                        simulated_list.append(simulated_plot)
                         model_names.append(model_name)
                         nse_list.append(result['nse'])
                         
                         color = model_colors.get(model_name, '#999999')
                         calib_nse = calibration_results.get(model_name, {}).get('nse', result['nse'])
-                        label = f"{model_name} (率定NSE={calib_nse:.3f}, 单场NSE={result['nse']:.3f})"
-                        ax.plot(simulated, color=color, label=label, linewidth=2, alpha=0.8)
+                        label = f"{model_name} (本场NSE={result['nse']:.3f})"
+                        ax.plot(simulated_plot, color=color, label=label, linewidth=2, alpha=0.8)
                         
                         summary_data.append({
                             "文件": file_name,
@@ -1737,12 +1896,12 @@ if uploaded_files and len(uploaded_files) > 0:
                             all_results[file_name]["整场洪水"] = []
                         all_results[file_name]["整场洪水"].append(result)
                 
-                if len(simulated_list) >= 2:
+                if len(simulated_list) >= 2 and len(flow_arr_plot) == len(simulated_list[0]):
                     weights = calc_bma_weights(nse_list)
                     bma_result = apply_bma_ensemble(simulated_list, weights)
-                    bma_nse = calc_nse(flow_arr, bma_result)
-                    bma_rmse = calc_rmse(flow_arr, bma_result)
-                    bma_pbias = calc_pbias(flow_arr, bma_result)
+                    bma_nse = calc_nse(flow_arr_plot, bma_result)
+                    bma_rmse = calc_rmse(flow_arr_plot, bma_result)
+                    bma_pbias = calc_pbias(flow_arr_plot, bma_result)
                     weights_str = format_weights_string(model_names, weights)
                     label = f'BMA集成 (NSE={bma_nse:.3f}) [{weights_str}]'
                     ax.plot(bma_result, color='#9b59b6', linestyle='--', 
@@ -2020,12 +2179,20 @@ if uploaded_files and len(uploaded_files) > 0:
         
         if upload_mode == "单文件（连续序列）":
             # 连续序列模式
+            # 剔除预热期数据
+            if warmup_steps > 0 and len(all_flow_arr) > warmup_steps:
+                all_flow_arr_plot = all_flow_arr[warmup_steps:]
+                all_precip_arr_plot = all_precip_arr[warmup_steps:]
+            else:
+                all_flow_arr_plot = all_flow_arr
+                all_precip_arr_plot = all_precip_arr
+            
             fig, ax = plt.subplots(figsize=(14, 5), dpi=150)
             
-            ax.plot(all_flow_arr, "k-", label="实测", linewidth=2.5)
+            ax.plot(all_flow_arr_plot, "k-", label="实测", linewidth=2.5)
             
             ax2 = ax.twinx()
-            ax2.bar(range(len(all_precip_arr)), all_precip_arr, color='#87CEEB', alpha=0.5, width=1, label='降水')
+            ax2.bar(range(len(all_precip_arr_plot)), all_precip_arr_plot, color='#87CEEB', alpha=0.5, width=1, label='降水')
             ax2.set_ylabel("降水 (mm)", fontsize=14, color='black')
             ax2.tick_params(axis='y', labelcolor='black', labelsize=11)
             ax2.invert_yaxis()
@@ -2036,10 +2203,16 @@ if uploaded_files and len(uploaded_files) > 0:
             model_names = []
             nse_list = []
             for model_name, result in calibration_results.items():
+                simulated = result['simulated']
+                # 剔除预热期数据
+                if warmup_steps > 0 and len(simulated) > warmup_steps:
+                    simulated_plot = simulated[warmup_steps:]
+                else:
+                    simulated_plot = simulated
                 color = model_colors.get(model_name, '#999999')
                 label = f"{model_name} (NSE={result['nse']:.3f})"
-                ax.plot(result['simulated'], color=color, label=label, linewidth=2, alpha=0.8)
-                simulated_list.append(result['simulated'])
+                ax.plot(simulated_plot, color=color, label=label, linewidth=2, alpha=0.8)
+                simulated_list.append(simulated_plot)
                 model_names.append(model_name)
                 nse_list.append(result['nse'])
                 
@@ -2093,12 +2266,20 @@ if uploaded_files and len(uploaded_files) > 0:
         
         else:
             # 单文件一场洪水模式
+            # 剔除预热期数据
+            if warmup_steps > 0 and len(all_flow_arr) > warmup_steps:
+                all_flow_arr_plot = all_flow_arr[warmup_steps:]
+                all_precip_arr_plot = all_precip_arr[warmup_steps:]
+            else:
+                all_flow_arr_plot = all_flow_arr
+                all_precip_arr_plot = all_precip_arr
+            
             fig, ax = plt.subplots(figsize=(14, 5), dpi=150)
             
-            ax.plot(all_flow_arr, "k-", label="实测", linewidth=2.5)
+            ax.plot(all_flow_arr_plot, "k-", label="实测", linewidth=2.5)
             
             ax2 = ax.twinx()
-            ax2.bar(range(len(all_precip_arr)), all_precip_arr, color='#87CEEB', alpha=0.5, width=1, label='降水')
+            ax2.bar(range(len(all_precip_arr_plot)), all_precip_arr_plot, color='#87CEEB', alpha=0.5, width=1, label='降水')
             ax2.set_ylabel("降水 (mm)", fontsize=14, color='black')
             ax2.tick_params(axis='y', labelcolor='black', labelsize=11)
             ax2.invert_yaxis()
@@ -2109,10 +2290,16 @@ if uploaded_files and len(uploaded_files) > 0:
             model_names = []
             nse_list = []
             for model_name, result in calibration_results.items():
+                simulated = result['simulated']
+                # 剔除预热期数据
+                if warmup_steps > 0 and len(simulated) > warmup_steps:
+                    simulated_plot = simulated[warmup_steps:]
+                else:
+                    simulated_plot = simulated
                 color = model_colors.get(model_name, '#999999')
                 label = f"{model_name} (NSE={result['nse']:.3f})"
-                ax.plot(result['simulated'], color=color, label=label, linewidth=2, alpha=0.8)
-                simulated_list.append(result['simulated'])
+                ax.plot(simulated_plot, color=color, label=label, linewidth=2, alpha=0.8)
+                simulated_list.append(simulated_plot)
                 model_names.append(model_name)
                 nse_list.append(result['nse'])
                 
