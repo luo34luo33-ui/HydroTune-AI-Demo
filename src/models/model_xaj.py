@@ -202,6 +202,7 @@ class XAJModel(BaseModel):
         params: Dict[str, float],
         spatial_data: Optional[Dict] = None,
         temperature: Optional[np.ndarray] = None,
+        warmup_steps: int = 0,
     ) -> np.ndarray:
         """
         运行新安江模型
@@ -215,6 +216,8 @@ class XAJModel(BaseModel):
                     'area': float,  # 流域面积 (km²)
                     'timestep': str  # 'hourly' 或 'daily'
                 }
+            temperature: 温度序列 (可选)
+            warmup_steps: 预热期步数
             
         Returns:
             模拟流量序列 (m³/s), shape: (n_timesteps,)

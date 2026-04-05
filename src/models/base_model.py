@@ -67,6 +67,7 @@ class BaseModel(ABC):
         params: Dict[str, float],
         spatial_data: Optional[Dict] = None,
         temperature: Optional[np.ndarray] = None,
+        warmup_steps: int = 0,
     ) -> np.ndarray:
         """
         运行模型
@@ -77,6 +78,9 @@ class BaseModel(ABC):
                 - 分布式: shape (n_timesteps, n_cells)
             evap: 蒸发序列 (mm)，格式同precip
             params: 模型参数字典
+            spatial_data: 空间数据
+            temperature: 温度序列
+            warmup_steps: 预热期步数
             spatial_data: 空间数据（分布式模型需要）
                 {
                     'area': float,           # 流域面积 (km²)

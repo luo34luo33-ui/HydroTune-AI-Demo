@@ -160,6 +160,7 @@ class TankModel(BaseModel):
         params: Dict[str, float],
         spatial_data: Optional[Dict] = None,
         temperature: Optional[np.ndarray] = None,
+        warmup_steps: int = 0,
     ) -> np.ndarray:
         """
         运行Tank水箱模型
@@ -175,6 +176,7 @@ class TankModel(BaseModel):
                     'timestep': str  # 'hourly' 或 'daily'，会覆盖 del_t
                 }
             temperature: 温度序列 (°C)，Tank模型不使用此参数
+            warmup_steps: 预热期步数
             
         Returns:
             模拟流量序列 (m³/s), shape: (n_timesteps,)

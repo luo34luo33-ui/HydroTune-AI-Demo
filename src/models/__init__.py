@@ -2,19 +2,13 @@
 from .base_model import BaseModel
 from .registry import ModelRegistry
 
-# 目前使用示例模型
-from .example_model import SimpleTankModel, LinearReservoirModel, HBVLikeModel
+# 简化版模型已废弃，请使用完整模型
 
-# 注册示例模型
-ModelRegistry.register(SimpleTankModel())
-ModelRegistry.register(LinearReservoirModel())
-ModelRegistry.register(HBVLikeModel())
-
-# 注册Tank水箱模型 (需要先于XAJ导入以避免sys.path冲突)
+# 注册Tank水箱模型 (完整版)
 try:
     from .model_tank import TankModel
     ModelRegistry.register(TankModel())
-    print("[HydroTune-AI] Tank水箱模型已注册")
+    print("[HydroTune-AI] Tank水箱模型(完整版)已注册")
 except ImportError as e:
     print(f"[HydroTune-AI] Tank水箱模型注册失败: {e}")
 

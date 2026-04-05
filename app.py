@@ -233,8 +233,8 @@ st.caption("上传数据 → 智能清洗 → 多模型率定 → 自动报告")
 # ============================================================
 # 侧边栏
 # ============================================================
-RECOMMENDED_MODELS = ['水箱模型', 'HBV模型', '新安江模型']
-SKIP_MODELS = ['Tank水箱模型', 'HBV模型(完整版)']
+RECOMMENDED_MODELS = ['Tank水箱模型(完整版)', 'HBV模型(完整版)', '新安江模型2']
+SKIP_MODELS = []
 
 with st.sidebar:
     st.markdown("### 🤖 AI Agent 状态")
@@ -245,7 +245,7 @@ with st.sidebar:
     st.markdown("### 📊 模型状态")
     from src.models.registry import ModelRegistry
     all_models = ModelRegistry.list_models()
-    check_models = ['水箱模型', 'HBV模型', '新安江模型']
+    check_models = ['Tank水箱模型(完整版)', 'HBV模型(完整版)', '新安江模型2']
     for model in check_models:
         if model in all_models:
             st.success(f"✅ {model}")
@@ -1519,7 +1519,7 @@ if uploaded_files and len(uploaded_files) > 0:
                     model = ModelRegistry.get_model(model_name)
                     
                     # 对XAJ模型使用安全的参数
-                    if model_name == '新安江模型':
+                    if model_name == '新安江模型2':
                         safe_params = default_xaj_params.copy()
                         # 尝试使用率定的部分参数
                         safe_params['k'] = params.get('k', 0.8)
@@ -1575,7 +1575,7 @@ if uploaded_files and len(uploaded_files) > 0:
                     except Exception as e:
                         # 如果失败，使用默认参数
                         try:
-                            if model_name == '新安江模型':
+                            if model_name == '新安江模型2':
                                 simulated = model.run(
                                     file_data['precip'],
                                     file_data['evap'],
@@ -1650,9 +1650,9 @@ if uploaded_files and len(uploaded_files) > 0:
             all_results = {}
             
             model_colors = {
-                '新安江模型': '#e74c3c',
-                '水箱模型': '#3498db',
-                'HBV模型': '#2ecc71',
+                '新安江模型2': '#e74c3c',
+                'Tank水箱模型(完整版)': '#3498db',
+                'HBV模型(完整版)': '#2ecc71',
             }
             
             n_files = len(file_dfs)
@@ -2013,9 +2013,9 @@ if uploaded_files and len(uploaded_files) > 0:
         all_results = {}
         
         model_colors = {
-            '新安江模型': '#e74c3c',
-            '水箱模型': '#3498db',
-            'HBV模型': '#2ecc71',
+            '新安江模型2': '#e74c3c',
+            'Tank水箱模型(完整版)': '#3498db',
+            'HBV模型(完整版)': '#2ecc71',
         }
         
         if upload_mode == "单文件（连续序列）":

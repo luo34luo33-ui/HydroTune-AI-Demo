@@ -173,6 +173,7 @@ class HBVModelAdapter(BaseModel):
         params: Dict[str, float],
         spatial_data: Optional[Dict] = None,
         temperature: Optional[np.ndarray] = None,
+        warmup_steps: int = 0,
     ) -> np.ndarray:
         """
         运行HBV水文模型
@@ -188,6 +189,7 @@ class HBVModelAdapter(BaseModel):
                     'monthly_pet': np.ndarray,   # 月平均PET (mm/day)，长度12
                 }
             temperature: 温度序列 (°C), shape: (n_timesteps,)，可选
+            warmup_steps: 预热期步数
             
         Returns:
             模拟流量序列 (m³/s), shape: (n_timesteps,)

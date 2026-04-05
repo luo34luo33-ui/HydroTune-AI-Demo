@@ -282,7 +282,7 @@ def calibrate_model_fast(
                     event_flow = event['flow']
                     event_upstream = event.get('upstream')
                     
-                    simulated = model.run(event_precip, event_evap, model_params, spatial_data, temperature)
+                    simulated = model.run(event_precip, event_evap, model_params, spatial_data, temperature, warmup_steps)
                     
                     if routing_params_added and event_upstream is not None and len(event_upstream) > 0:
                         routed_upstream = muskingum_routing(event_upstream, k_rout, x_rout)
@@ -300,7 +300,7 @@ def calibrate_model_fast(
                 return -avg_nse
             else:
                 # 单场次模式（原逻辑）
-                simulated = model.run(precip, evap, model_params, spatial_data, temperature)
+                simulated = model.run(precip, evap, model_params, spatial_data, temperature, warmup_steps)
                 
                 if routing_params_added and upstream_flow is not None and len(upstream_flow) > 0:
                     routed_upstream = muskingum_routing(upstream_flow, k_rout, x_rout)
@@ -340,14 +340,14 @@ def calibrate_model_fast(
     try:
         if use_multi_events:
             first_event = calib_events[0]
-            simulated = model.run(first_event['precip'], first_event['evap'], best_params, spatial_data, temperature)
+            simulated = model.run(first_event['precip'], first_event['evap'], best_params, spatial_data, temperature, warmup_steps)
             if routing_params_added and first_event.get('upstream') is not None:
                 routed_upstream = muskingum_routing(first_event['upstream'], 
                                                     best_params.get('k_routing', 2.5), 
                                                     best_params.get('x_routing', 0.25))
                 simulated = simulated + routed_upstream
         else:
-            simulated = model.run(precip, evap, best_params, spatial_data, temperature)
+            simulated = model.run(precip, evap, best_params, spatial_data, temperature, warmup_steps)
             if routing_params_added and upstream_flow is not None and len(upstream_flow) > 0:
                 routed_upstream = muskingum_routing(upstream_flow, best_params.get('k_routing', 2.5), 
                                                     best_params.get('x_routing', 0.25))
