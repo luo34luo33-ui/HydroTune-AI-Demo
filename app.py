@@ -1480,10 +1480,15 @@ if uploaded_files and len(uploaded_files) > 0:
                 st.code(traceback.format_exc()[-600:])
                 return None
         
-        # 根据模式选择率定策略
+# 根据模式选择率定策略
         if upload_mode == "多文件（每文件一场洪水）":
-            # 多文件模式：选择1/3场次率定，2/3场次验证
-            st.info(f"📊 多文件模式：{len(file_dfs)} 个文件，将分为率定和验证两组")
+            # 判断是否使用导入参数模式
+            use_imported = (use_imported_params == "导入参数" and imported_params)
+            
+            if use_imported:
+                st.info(f"📊 上传洪水场次：{len(file_dfs)} 场")
+            else:
+                st.info(f"📊 多文件模式：{len(file_dfs)} 个文件，将分为率定和验证两组")
             
             # 1. 准备所有文件数据
             file_data_list = []
@@ -1529,9 +1534,13 @@ if uploaded_files and len(uploaded_files) > 0:
             calib_files = [file_data_list[i] for i in calib_indices]
             valid_files = [file_data_list[i] for i in valid_indices]
             
-            st.success(f"📊 分组完成：{n_calib} 场率定 + {len(valid_files)} 场验证 (率定:验证=3:1)")
-            st.write(f"**率定场次**: {[f['file_name'] for f in calib_files]}")
-            st.write(f"**验证场次**: {[f['file_name'] for f in valid_files]}")
+            if use_imported:
+                st.success(f"📊 上传洪水场次：{len(file_data_list)} 场")
+                st.write(f"**洪水场次**: {[f['file_name'] for f in file_data_list]}")
+            else:
+                st.success(f"📊 分组完成：{n_calib} 场率定 + {len(valid_files)} 场验证 (率定:验证=3:1)")
+                st.write(f"**率定场次**: {[f['file_name'] for f in calib_files]}")
+                st.write(f"**验证场次**: {[f['file_name'] for f in valid_files]}")
             
             # 计算预热期步数
             if warmup_hours > 0 and user_timestep == 'hourly':
@@ -1553,8 +1562,12 @@ if uploaded_files and len(uploaded_files) > 0:
                 calib_events.append(event)
             
             avg_steps = sum(len(e['flow']) for e in calib_events) // len(calib_events) if calib_events else 0
-            st.info(f"📊 率定{len(calib_events)}场，每场约 {avg_steps} 个时间步" + 
-                   (f"，预热期 {warmup_steps} 步" if warmup_steps > 0 else ""))
+            if use_imported:
+                st.info(f"📊 上传洪水{len(calib_events)}场，每场约 {avg_steps} 个时间步" + 
+                       (f"，预热期 {warmup_steps} 步" if warmup_steps > 0 else ""))
+            else:
+                st.info(f"📊 率定{len(calib_events)}场，每场约 {avg_steps} 个时间步" + 
+                       (f"，预热期 {warmup_steps} 步" if warmup_steps > 0 else ""))
             
             # 4. 率定模型（多场次模式）
             import traceback
