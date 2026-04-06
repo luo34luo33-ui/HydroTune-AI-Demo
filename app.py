@@ -2005,13 +2005,12 @@ if uploaded_files and len(uploaded_files) > 0:
                 buf = io.BytesIO()
                 fig.savefig(buf, format='png', dpi=300, bbox_inches='tight')
                 buf.seek(0)
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 st.download_button(
                     "💾 下载图像",
                     data=buf,
-                    file_name=f"flow_comparison_{timestamp}.png",
+                    file_name="flow_comparison_all.png",
                     mime="image/png",
-                    key="download_main_plot"
+                    key="download_all_plots_btn"
                 )
             
             # 汇总指标表
@@ -2447,12 +2446,12 @@ if uploaded_files and len(uploaded_files) > 0:
                 buf = io.BytesIO()
                 fig.savefig(buf, format='png', dpi=300, bbox_inches='tight')
                 buf.seek(0)
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 st.download_button(
                     "💾 下载图像",
                     data=buf,
-                    file_name=f"flow_comparison_{timestamp}.png",
-                    mime="image/png"
+                    file_name="flow_comparison_single.png",
+                    mime="image/png",
+                    key="download_single_plot_btn"
                 )
             
             # 汇总指标表
