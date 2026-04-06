@@ -233,7 +233,7 @@ st.caption("上传数据 → 智能清洗 → 多模型率定 → 自动报告")
 # ============================================================
 # 侧边栏
 # ============================================================
-RECOMMENDED_MODELS = ['HBV模型(完整版)']  # 暂时只启用HBV模型
+RECOMMENDED_MODELS = ['HBV模型(完整版)', '新安江模型2', 'Tank水箱模型(完整版)']  # 启用三个模型
 SKIP_MODELS = []
 
 
@@ -286,7 +286,7 @@ with st.sidebar:
     st.markdown("### 📊 模型状态")
     from src.models.registry import ModelRegistry
     all_models = ModelRegistry.list_models()
-    check_models = ['HBV模型(完整版)']  # 暂时只检查HBV模型
+    check_models = ['HBV模型(完整版)', '新安江模型2', 'Tank水箱模型(完整版)']  # 检查三个模型
     for model in check_models:
         if model in all_models:
             st.success(f"✅ {model}")
