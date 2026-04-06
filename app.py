@@ -398,7 +398,11 @@ with st.sidebar:
                 if len(tank_df) == 0:
                     raise ValueError("CSV文件没有数据行，请检查文件内容")
                 
-                tank_params = {col: float(tank_df[col].values[0]) for col in tank_df.columns if col != '模型'}
+                tank_params = {
+                    col: float(tank_df[col].values[0])
+                    for col in tank_df.columns
+                    if col != '模型' and col not in ['k_routing', 'x_routing']
+                }
                 imported_params['Tank水箱模型(完整版)'] = tank_params
                 st.success(f"✅ Tank模型参数导入成功: {tank_params}")
             except Exception as e:
@@ -494,15 +498,29 @@ with st.sidebar:
             help="上游断面流量列名（数据需在同一文件中）"
         )
         column_mapping['upstream'] = upstream_col if upstream_col else ""
-        st.caption("✓ 上游汇流参数将在率定时自动优化")
+        
+        st.markdown("**马斯京根参数（手动设置）：**")
+        col_k, col_x = st.columns(2)
+        with col_k:
+            k_routing = st.number_input(
+                "k (河道传播时间)",
+                min_value=0.5,
+                max_value=10.0,
+                value=2.5,
+                step=0.1,
+                help="马斯京根参数k，表示洪水波传播时间"
+            )
+        with col_x:
+            x_routing = st.number_input(
+                "x (洪水坦化系数)",
+                min_value=0.0,
+                max_value=0.5,
+                value=0.25,
+                step=0.01,
+                help="马斯京根参数x，表示洪水坦化程度"
+            )
     else:
         column_mapping['upstream'] = ""
-
-    # 使用导入的参数或默认值
-    if 'imported_k_routing' in st.session_state and 'imported_x_routing' in st.session_state:
-        k_routing = st.session_state['imported_k_routing']
-        x_routing = st.session_state['imported_x_routing']
-    else:
         k_routing, x_routing = 2.5, 0.25
 
     st.divider()
@@ -1440,6 +1458,9 @@ if uploaded_files and len(uploaded_files) > 0:
         def calibrate_model(model_name, precip, evap, flow, upstream=None):
             try:
                 spatial_data = {'area': catchment_area}
+                manual_routing = None
+                if enable_upstream_routing:
+                    manual_routing = {'k_routing': k_routing, 'x_routing': x_routing}
                 return calibrate_model_fast(
                     model_name,
                     precip,
@@ -1451,7 +1472,8 @@ if uploaded_files and len(uploaded_files) > 0:
                     algorithm=algorithm,
                     algo_params=algo_params,
                     upstream_flow=upstream,
-                    enable_routing=enable_upstream_routing
+                    enable_routing=enable_upstream_routing,
+                    manual_routing_params=manual_routing
                 )
             except Exception as e:
                 st.error(f"  ⚠️ {model_name} 率定异常: {type(e).__name__}: {str(e)}")
@@ -1592,6 +1614,10 @@ if uploaded_files and len(uploaded_files) > 0:
                         total_models = len(RECOMMENDED_MODELS)
                         model_base = model_idx / total_models
                         
+                        manual_routing = None
+                        if enable_upstream_routing:
+                            manual_routing = {'k_routing': k_routing, 'x_routing': x_routing}
+                        
                         result = calibrate_model_fast(
                             model_name,
                             calib_events[0]['precip'],
@@ -1606,7 +1632,8 @@ if uploaded_files and len(uploaded_files) > 0:
                             enable_routing=enable_upstream_routing,
                             calib_events=calib_events,
                             warmup_steps=warmup_steps,
-                            progress_callback=lambda p: progress_bar.progress(model_base + p / total_models)
+                            progress_callback=lambda p: progress_bar.progress(model_base + p / total_models),
+                            manual_routing_params=manual_routing
                         )
                     except Exception as e:
                         st.error(f"  ⚠️ {model_name} 率定异常: {type(e).__name__}: {str(e)}")
@@ -2095,6 +2122,10 @@ if uploaded_files and len(uploaded_files) > 0:
                         total_models = len(RECOMMENDED_MODELS)
                         model_base = model_idx / total_models
                         
+                        manual_routing = None
+                        if enable_upstream_routing:
+                            manual_routing = {'k_routing': k_routing, 'x_routing': x_routing}
+                        
                         result = calibrate_model_fast(
                             model_name,
                             calib_events[0]['precip'],
@@ -2109,7 +2140,8 @@ if uploaded_files and len(uploaded_files) > 0:
                             enable_routing=enable_upstream_routing,
                             calib_events=calib_events,
                             warmup_steps=warmup_steps,
-                            progress_callback=lambda p: progress_bar.progress(model_base + p / total_models)
+                            progress_callback=lambda p: progress_bar.progress(model_base + p / total_models),
+                            manual_routing_params=manual_routing
                         )
                     except Exception as e:
                         st.error(f"  ⚠️ {model_name} 率定异常: {type(e).__name__}: {str(e)}")
@@ -2163,6 +2195,10 @@ if uploaded_files and len(uploaded_files) > 0:
                         total_models = len(RECOMMENDED_MODELS)
                         model_base = model_idx / total_models
                         
+                        manual_routing = None
+                        if enable_upstream_routing:
+                            manual_routing = {'k_routing': k_routing, 'x_routing': x_routing}
+                        
                         result = calibrate_model_fast(
                             model_name,
                             calib_events[0]['precip'],
@@ -2177,7 +2213,8 @@ if uploaded_files and len(uploaded_files) > 0:
                             enable_routing=enable_upstream_routing,
                             calib_events=calib_events,
                             warmup_steps=warmup_steps,
-                            progress_callback=lambda p: progress_bar.progress(model_base + p / total_models)
+                            progress_callback=lambda p: progress_bar.progress(model_base + p / total_models),
+                            manual_routing_params=manual_routing
                         )
                     except Exception as e:
                         st.error(f"  ⚠️ {model_name} 率定异常: {type(e).__name__}: {str(e)}")

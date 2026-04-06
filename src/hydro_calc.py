@@ -217,6 +217,7 @@ def calibrate_model_fast(
     calib_events: list = None,
     warmup_steps: int = 0,
     progress_callback: callable = None,
+    manual_routing_params: Dict = None,
 ) -> Tuple[dict, float, np.ndarray]:
     """
     多算法率定模型参数
@@ -261,14 +262,20 @@ def calibrate_model_fast(
     bounds = list(model.param_bounds.values())
     
     routing_params_added = False
+    use_manual_routing = (
+        manual_routing_params is not None and
+        'k_routing' in manual_routing_params and
+        'x_routing' in manual_routing_params
+    )
+    
     if enable_routing and upstream_flow is not None and len(upstream_flow) > 0:
-        param_names.extend(['k_routing', 'x_routing'])
-        bounds.extend([(0.5, 5.0), (0.0, 0.5)])
-        routing_params_added = True
+        if not use_manual_routing:
+            param_names.extend(['k_routing', 'x_routing'])
+            bounds.extend([(0.5, 5.0), (0.0, 0.5)])
+            routing_params_added = True
     
     n_params = len(param_names)
     
-    # 多场次模式：遍历所有率定场次计算平均NSE
     use_multi_events = calib_events is not None and len(calib_events) > 0
     
     def objective(params_array):
@@ -276,6 +283,10 @@ def calibrate_model_fast(
             model_params = {k: v for k, v in zip(param_names[:-2], params_array[:-2])}
             k_rout = params_array[-2]
             x_rout = params_array[-1]
+        elif use_manual_routing:
+            model_params = {k: v for k, v in zip(param_names, params_array)}
+            k_rout = manual_routing_params['k_routing']
+            x_rout = manual_routing_params['x_routing']
         else:
             model_params = {k: v for k, v in zip(param_names, params_array)}
             k_rout, x_rout = 2.5, 0.25
