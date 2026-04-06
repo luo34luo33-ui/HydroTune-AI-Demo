@@ -268,10 +268,13 @@ def calibrate_model_fast(
         'x_routing' in manual_routing_params
     )
     
+    routing_params_added = False
     if enable_routing and upstream_flow is not None and len(upstream_flow) > 0:
         if not use_manual_routing:
             param_names.extend(['k_routing', 'x_routing'])
             bounds.extend([(0.5, 5.0), (0.0, 0.5)])
+            routing_params_added = True
+        elif use_manual_routing:
             routing_params_added = True
     
     n_params = len(param_names)
@@ -362,18 +365,32 @@ def calibrate_model_fast(
         if use_multi_events:
             first_event = calib_events[0]
             simulated = model.run(first_event['precip'], first_event['evap'], best_params, spatial_data, temperature, warmup_steps)
-            if routing_params_added and first_event.get('upstream') is not None:
-                routed_upstream = muskingum_routing(first_event['upstream'], 
+            
+            upstream = first_event.get('upstream')
+            if use_manual_routing and upstream is not None and len(upstream) > 0:
+                k_rout = manual_routing_params.get('k_routing', 2.5)
+                x_rout = manual_routing_params.get('x_routing', 0.25)
+                routed_upstream = muskingum_routing(upstream, k_rout, x_rout)
+                simulated = simulated + routed_upstream
+            elif routing_params_added and upstream is not None:
+                routed_upstream = muskingum_routing(upstream, 
                                                     best_params.get('k_routing', 2.5), 
                                                     best_params.get('x_routing', 0.25))
                 simulated = simulated + routed_upstream
         else:
             simulated = model.run(precip, evap, best_params, spatial_data, temperature, warmup_steps)
-            if routing_params_added and upstream_flow is not None and len(upstream_flow) > 0:
+            
+            if use_manual_routing and upstream_flow is not None and len(upstream_flow) > 0:
+                k_rout = manual_routing_params.get('k_routing', 2.5)
+                x_rout = manual_routing_params.get('x_routing', 0.25)
+                routed_upstream = muskingum_routing(upstream_flow, k_rout, x_rout)
+                simulated = simulated + routed_upstream
+            elif routing_params_added and upstream_flow is not None and len(upstream_flow) > 0:
                 routed_upstream = muskingum_routing(upstream_flow, best_params.get('k_routing', 2.5), 
                                                     best_params.get('x_routing', 0.25))
                 simulated = simulated + routed_upstream
-    except Exception:
+    except Exception as e:
+        print(f"[ERROR] 模型运行失败: {e}")
         simulated = np.full_like(observed_flow, np.nan)
         best_nse = -1e10
     
