@@ -1494,10 +1494,13 @@ if uploaded_files and len(uploaded_files) > 0:
                     if orig_name and orig_name in df.columns:
                         df = df.rename(columns={orig_name: std_name})
                 
-                precip_arr = np.array(df['precip'].values) if 'precip' in df.columns else np.zeros(len(df))
-                flow_arr = np.array(df['flow'].values) if 'flow' in df.columns else np.zeros(len(df))
-                evap_arr = np.array(df['evap'].values) if 'evap' in df.columns else np.zeros(len(df))
-                upstream_arr = np.array(df['upstream'].values) if 'upstream' in df.columns and enable_upstream_routing else None
+                df['precip'] = df['precip'].fillna(0) if 'precip' in df.columns else pd.Series(np.zeros(len(df)))
+                df['flow'] = df['flow'].fillna(0) if 'flow' in df.columns else pd.Series(np.zeros(len(df)))
+                df['evap'] = df['evap'].fillna(0) if 'evap' in df.columns else pd.Series(np.zeros(len(df)))
+                precip_arr = np.array(df['precip'].values)
+                flow_arr = np.array(df['flow'].values)
+                evap_arr = np.array(df['evap'].values)
+                upstream_arr = np.array(df['upstream'].fillna(0).values) if 'upstream' in df.columns and enable_upstream_routing else None
                 
                 # 检查数据是否有效
                 precip_sum = np.sum(precip_arr)
@@ -1876,8 +1879,10 @@ if uploaded_files and len(uploaded_files) > 0:
                     for std_name, orig_name in column_mapping.items():
                         if orig_name and orig_name in df.columns:
                             df = df.rename(columns={orig_name: std_name})
-                    precip_arr = np.array(df['precip'].values) if 'precip' in df.columns else np.zeros(len(df))
-                    flow_arr = np.array(df['flow'].values) if 'flow' in df.columns else np.zeros(len(df))
+                    df['precip'] = df['precip'].fillna(0) if 'precip' in df.columns else pd.Series(np.zeros(len(df)))
+                    df['flow'] = df['flow'].fillna(0) if 'flow' in df.columns else pd.Series(np.zeros(len(df)))
+                    precip_arr = np.array(df['precip'].values)
+                    flow_arr = np.array(df['flow'].values)
                     is_calib = False
                 
                 if precip_arr is None or len(precip_arr) == 0:
