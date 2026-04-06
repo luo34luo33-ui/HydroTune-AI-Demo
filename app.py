@@ -1724,7 +1724,6 @@ if uploaded_files and len(uploaded_files) > 0:
                             safe_params,
                             {'area': catchment_area}  # 简化spatial_data，只传area
                         )
-                        st.caption(f"DEBUG: {file_name} - precip len={len(file_data['precip'])}, result len={len(simulated) if simulated is not None else 'None'}")
                         # 检查模拟结果是否有效
                         if simulated is None or len(simulated) == 0:
                             st.error(f"  ❌ {file_name}/{model_name}: 模型返回空结果")
