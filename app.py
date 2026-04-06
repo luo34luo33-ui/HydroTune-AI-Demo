@@ -377,15 +377,27 @@ with st.sidebar:
         if tank_param_file is not None:
             try:
                 import pandas as pd
+                import io
+                
+                file_content = tank_param_file.getvalue()
+                if not file_content or len(file_content.strip()) == 0:
+                    raise ValueError("文件为空，请检查上传的文件")
+                
                 tank_df = None
                 for enc in ['utf-8', 'gbk', 'gb2312', 'latin1']:
                     try:
-                        tank_df = pd.read_csv(tank_param_file, encoding=enc)
+                        tank_df = pd.read_csv(io.BytesIO(file_content), encoding=enc)
                         break
                     except UnicodeDecodeError:
                         continue
+                
                 if tank_df is None:
                     raise ValueError("无法解码文件，请保存为UTF-8编码")
+                if len(tank_df.columns) == 0:
+                    raise ValueError("CSV文件没有列，请检查文件格式")
+                if len(tank_df) == 0:
+                    raise ValueError("CSV文件没有数据行，请检查文件内容")
+                
                 tank_params = {col: float(tank_df[col].values[0]) for col in tank_df.columns if col != '模型'}
                 imported_params['Tank水箱模型(完整版)'] = tank_params
                 st.success(f"✅ Tank模型参数导入成功: {tank_params}")
