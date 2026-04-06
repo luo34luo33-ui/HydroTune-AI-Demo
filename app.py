@@ -1991,6 +1991,48 @@ if uploaded_files and len(uploaded_files) > 0:
                 ax.grid(True, alpha=0.3)
                 ax.set_xlabel(xlabel_text, fontsize=12)
                 ax.set_ylabel(r"流量 ($m^3/s$)", fontsize=12)
+                
+                # 为每个文件创建单独的图像并添加下载按钮
+                import io
+                single_fig, single_ax = plt.subplots(figsize=(10, 4), dpi=150)
+                single_ax.plot(flow_arr_plot, "k-", label="实测", linewidth=2.5)
+                single_ax2 = single_ax.twinx()
+                single_ax2.bar(range(len(precip_arr_plot)), precip_arr_plot, color='#87CEEB', alpha=0.5, width=1, label='降水')
+                single_ax2.set_ylabel("降水 (mm)", fontsize=14, color='black')
+                single_ax2.tick_params(axis='y', labelcolor='black', labelsize=11)
+                single_ax2.invert_yaxis()
+                
+                for model_name in file_simulation_results:
+                    if file_name in file_simulation_results.get(model_name, {}):
+                        result = file_simulation_results[model_name][file_name]
+                        simulated = result.get('simulated')
+                        if simulated is not None and len(simulated) > 0:
+                            simulated = np.nan_to_num(simulated, nan=0.0)
+                            if warmup_steps > 0 and len(simulated) > warmup_steps:
+                                simulated_plot = simulated[warmup_steps:]
+                            else:
+                                simulated_plot = simulated
+                            color = model_colors.get(model_name, '#999999')
+                            label = f"{model_name} (NSE={result['nse']:.3f})"
+                            single_ax.plot(simulated_plot, color=color, label=label, linewidth=2, alpha=0.8)
+                
+                single_ax.set_title(f"{file_name} [{event_type}]", fontsize=14)
+                single_ax.legend(fontsize=9, loc='upper right')
+                single_ax.grid(True, alpha=0.3)
+                single_ax.set_xlabel(xlabel_text, fontsize=12)
+                single_ax.set_ylabel(r"流量 ($m^3/s$)", fontsize=12)
+                plt.tight_layout()
+                
+                single_buf = io.BytesIO()
+                single_fig.savefig(single_buf, format='png', dpi=150, bbox_inches='tight')
+                single_buf.seek(0)
+                st.download_button(
+                    f"📥 下载 {file_name}",
+                    data=single_buf,
+                    file_name=f"{file_name.replace('.csv', '')}_flow.png",
+                    mime="image/png"
+                )
+                plt.close(single_fig)
             
             for idx in range(n_files, len(axes)):
                 axes[idx].axis('off')
