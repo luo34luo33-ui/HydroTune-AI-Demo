@@ -7,7 +7,10 @@ from typing import Dict, Tuple, Optional
 import numpy as np
 
 from .base_model import BaseModel
-from ..hydro import tank_discharge, MODEL_PARAMS, TANK_PARAMETER_ORDER
+try:
+    from tank_model_structured.src import tank_discharge, MODEL_PARAMS, TANK_PARAMETER_ORDER
+except ImportError:
+    from src.hydro import tank_discharge, MODEL_PARAMS, TANK_PARAMETER_ORDER
 
 
 class TankModel(BaseModel):
