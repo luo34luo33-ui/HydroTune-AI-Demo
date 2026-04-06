@@ -1568,6 +1568,10 @@ if uploaded_files and len(uploaded_files) > 0:
                     st.write(f"  🔄 开始率定 {model_name}...")
                     try:
                         spatial_data = {'area': catchment_area}
+                        
+                        total_models = len(RECOMMENDED_MODELS)
+                        model_base = model_idx / total_models
+                        
                         result = calibrate_model_fast(
                             model_name,
                             calib_events[0]['precip'],
@@ -1581,7 +1585,8 @@ if uploaded_files and len(uploaded_files) > 0:
                             upstream_flow=calib_events[0].get('upstream'),
                             enable_routing=enable_upstream_routing,
                             calib_events=calib_events,
-                            warmup_steps=warmup_steps
+                            warmup_steps=warmup_steps,
+                            progress_callback=lambda p: progress_bar.progress(model_base + p / total_models)
                         )
                     except Exception as e:
                         st.error(f"  ⚠️ {model_name} 率定异常: {type(e).__name__}: {str(e)}")
@@ -2066,6 +2071,10 @@ if uploaded_files and len(uploaded_files) > 0:
                         continue
                     try:
                         spatial_data = {'area': catchment_area}
+                        
+                        total_models = len(RECOMMENDED_MODELS)
+                        model_base = model_idx / total_models
+                        
                         result = calibrate_model_fast(
                             model_name,
                             calib_events[0]['precip'],
@@ -2079,7 +2088,8 @@ if uploaded_files and len(uploaded_files) > 0:
                             upstream_flow=calib_events[0].get('upstream'),
                             enable_routing=enable_upstream_routing,
                             calib_events=calib_events,
-                            warmup_steps=warmup_steps
+                            warmup_steps=warmup_steps,
+                            progress_callback=lambda p: progress_bar.progress(model_base + p / total_models)
                         )
                     except Exception as e:
                         st.error(f"  ⚠️ {model_name} 率定异常: {type(e).__name__}: {str(e)}")
@@ -2129,6 +2139,10 @@ if uploaded_files and len(uploaded_files) > 0:
                         continue
                     try:
                         spatial_data = {'area': catchment_area}
+                        
+                        total_models = len(RECOMMENDED_MODELS)
+                        model_base = model_idx / total_models
+                        
                         result = calibrate_model_fast(
                             model_name,
                             calib_events[0]['precip'],
@@ -2142,7 +2156,8 @@ if uploaded_files and len(uploaded_files) > 0:
                             upstream_flow=calib_events[0].get('upstream'),
                             enable_routing=enable_upstream_routing,
                             calib_events=calib_events,
-                            warmup_steps=warmup_steps
+                            warmup_steps=warmup_steps,
+                            progress_callback=lambda p: progress_bar.progress(model_base + p / total_models)
                         )
                     except Exception as e:
                         st.error(f"  ⚠️ {model_name} 率定异常: {type(e).__name__}: {str(e)}")

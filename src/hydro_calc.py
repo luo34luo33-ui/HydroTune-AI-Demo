@@ -216,6 +216,7 @@ def calibrate_model_fast(
     enable_routing: bool = False,
     calib_events: list = None,
     warmup_steps: int = 0,
+    progress_callback: callable = None,
 ) -> Tuple[dict, float, np.ndarray]:
     """
     多算法率定模型参数
@@ -327,17 +328,17 @@ def calibrate_model_fast(
             return 1e10
     
     if algorithm == 'two_stage' or algorithm == '两阶段算法(推荐)':
-        best_x, best_nse = _two_stage_optimize(objective, bounds, max_iter, n_params)
+        best_x, best_nse = _two_stage_optimize(objective, bounds, max_iter, n_params, progress_callback)
     elif algorithm == 'pso' or algorithm == 'PSO':
-        best_x, best_nse = _pso_optimize(objective, bounds, max_iter, n_params, algo_params)
+        best_x, best_nse = _pso_optimize(objective, bounds, max_iter, n_params, algo_params, progress_callback)
     elif algorithm == 'ga' or algorithm == '遗传算法(GA)':
-        best_x, best_nse = _ga_optimize(objective, bounds, max_iter, n_params, algo_params)
+        best_x, best_nse = _ga_optimize(objective, bounds, max_iter, n_params, algo_params, progress_callback)
     elif algorithm == 'sce' or algorithm == 'SCE-UA':
-        best_x, best_nse = _sce_optimize(objective, bounds, max_iter, n_params)
+        best_x, best_nse = _sce_optimize(objective, bounds, max_iter, n_params, progress_callback)
     elif algorithm == 'de' or algorithm == '差分进化(DE)':
-        best_x, best_nse = _de_optimize(objective, bounds, max_iter, n_params, algo_params)
+        best_x, best_nse = _de_optimize(objective, bounds, max_iter, n_params, algo_params, progress_callback)
     else:
-        best_x, best_nse = _two_stage_optimize(objective, bounds, max_iter, n_params)
+        best_x, best_nse = _two_stage_optimize(objective, bounds, max_iter, n_params, progress_callback)
     
     if routing_params_added:
         best_params = {k: v for k, v in zip(param_names[:-2], best_x[:-2])}
@@ -368,7 +369,7 @@ def calibrate_model_fast(
     return best_params, best_nse, simulated
 
 
-def _two_stage_optimize(objective, bounds, max_iter, n_params):
+def _two_stage_optimize(objective, bounds, max_iter, n_params, progress_callback=None):
     if n_params <= 5:
         stage1_iter = max(5, max_iter // 2)
         stage2_iter = max(20, max_iter * 3)
@@ -379,14 +380,34 @@ def _two_stage_optimize(objective, bounds, max_iter, n_params):
         stage1_iter = max(5, max_iter // 2)
         stage2_iter = max(15, max_iter)
     
+    total_iter = stage1_iter + stage2_iter
+    current_iter = [0]
+    
+    def update_progress_da(x, e, context):
+        if progress_callback:
+            current_iter[0] += 1
+            progress = min(current_iter[0] / total_iter, 1.0)
+            progress_callback(progress)
+        return False
+    
+    def update_progress_min(xk):
+        if progress_callback:
+            current_iter[0] += 1
+            progress = min(current_iter[0] / total_iter, 1.0)
+            progress_callback(progress)
+    
     result1 = dual_annealing(
         objective, bounds=bounds, maxiter=stage1_iter,
         initial_temp=5230, restart_temp_ratio=1e-4,
         visit=2.62, accept=-5.0, no_local_search=True,
+        callback=update_progress_da if progress_callback else None,
     )
+    current_iter[0] = stage1_iter
+    
     result2 = minimize(
         objective, x0=result1.x, method='L-BFGS-B', bounds=bounds,
-        options={'maxiter': stage2_iter, 'ftol': 1e-7}
+        options={'maxiter': stage2_iter, 'ftol': 1e-7},
+        callback=update_progress_min if progress_callback else None,
     )
     
     if result2.fun <= result1.fun:
@@ -394,11 +415,11 @@ def _two_stage_optimize(objective, bounds, max_iter, n_params):
     return result1.x, -result1.fun
 
 
-def _pso_optimize(objective, bounds, max_iter, n_params, algo_params):
+def _pso_optimize(objective, bounds, max_iter, n_params, algo_params, progress_callback=None):
     try:
         from pyswarm import pso
     except ImportError:
-        return _two_stage_optimize(objective, bounds, max_iter, n_params)
+        return _two_stage_optimize(objective, bounds, max_iter, n_params, progress_callback)
     
     n_particles = algo_params.get('n_particles', 20)
     omega = algo_params.get('w', 0.7)
@@ -410,10 +431,12 @@ def _pso_optimize(objective, bounds, max_iter, n_params, algo_params):
     
     xopt, fopt = pso(objective, lb, ub, swarmsize=n_particles, 
                      maxiter=max_iter, omega=omega, phip=phip, phig=phig)
+    if progress_callback:
+        progress_callback(1.0)
     return xopt, -fopt
 
 
-def _ga_optimize(objective, bounds, max_iter, n_params, algo_params):
+def _ga_optimize(objective, bounds, max_iter, n_params, algo_params, progress_callback=None):
     pop_size = algo_params.get('pop_size', 20)
     n_generations = algo_params.get('n_generations', 50)
     crossover_rate = algo_params.get('crossover_rate', 0.8)
@@ -453,18 +476,24 @@ def _ga_optimize(objective, bounds, max_iter, n_params, algo_params):
         
         pop = new_pop
         fitnesses = [objective(np.array(ind)) for ind in pop]
+        
+        if progress_callback:
+            progress_callback((gen + 1) / n_generations)
     
     best_idx = np.argmin(fitnesses)
     return np.array(pop[best_idx]), -fitnesses[best_idx]
 
 
-def _sce_optimize(objective, bounds, max_iter, n_params):
+def _sce_optimize(objective, bounds, max_iter, n_params, progress_callback=None):
     result = differential_evolution(objective, bounds=bounds, maxiter=max_iter, 
-                                     tol=1e-6, polish=True, strategy='best1bin')
+                                     tol=1e-6, polish=True, strategy='best1bin',
+                                     callback=lambda xk, convergence: progress_callback(1.0) if progress_callback else None)
+    if progress_callback:
+        progress_callback(1.0)
     return result.x, -result.fun
 
 
-def _de_optimize(objective, bounds, max_iter, n_params, algo_params):
+def _de_optimize(objective, bounds, max_iter, n_params, algo_params, progress_callback=None):
     mutation_factor = algo_params.get('mutation_factor', 0.8)
     crossover_prob = algo_params.get('crossover_prob', 0.7)
     pop_size = algo_params.get('pop_size', 20)
@@ -472,8 +501,11 @@ def _de_optimize(objective, bounds, max_iter, n_params, algo_params):
     result = differential_evolution(
         objective, bounds=bounds, maxiter=max_iter, tol=1e-6, polish=True,
         strategy='best1bin', mutation=mutation_factor, recombination=crossover_prob,
-        popsize=pop_size
+        popsize=pop_size,
+        callback=lambda xk, convergence: progress_callback(1.0) if progress_callback else None
     )
+    if progress_callback:
+        progress_callback(1.0)
     return result.x, -result.fun
 
 
