@@ -271,8 +271,7 @@ def apply_upstream_routing(simulated, upstream_arr, k_routing, x_routing, warmup
     # 马斯京根演算
     routed = muskingum_routing(upstream_arr, k_routing, x_routing)
     
-    # 标记上游汇流已叠加
-    st.caption(f"✓ 上游汇流已叠加 (k={k_routing}, x={x_routing})")
+    
     
     return simulated + routed
 
