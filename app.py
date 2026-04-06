@@ -2001,11 +2001,17 @@ if uploaded_files and len(uploaded_files) > 0:
             # 保存图像按钮
             col1, col2 = st.columns([1, 5])
             with col1:
-                if st.button("💾 保存图像"):
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    filename = f"flow_comparison_{timestamp}.png"
-                    fig.savefig(filename, dpi=300, bbox_inches='tight')
-                    st.success(f"✅ 图像已保存至: {filename}")
+                import io
+                buf = io.BytesIO()
+                fig.savefig(buf, format='png', dpi=300, bbox_inches='tight')
+                buf.seek(0)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                st.download_button(
+                    "💾 下载图像",
+                    data=buf,
+                    file_name=f"flow_comparison_{timestamp}.png",
+                    mime="image/png"
+                )
             
             # 汇总指标表
             if summary_data:
@@ -2436,11 +2442,17 @@ if uploaded_files and len(uploaded_files) > 0:
             # 保存图像按钮
             col1, col2 = st.columns([1, 5])
             with col1:
-                if st.button("💾 保存图像"):
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    filename = f"flow_comparison_{timestamp}.png"
-                    fig.savefig(filename, dpi=300, bbox_inches='tight')
-                    st.success(f"✅ 图像已保存至: {filename}")
+                import io
+                buf = io.BytesIO()
+                fig.savefig(buf, format='png', dpi=300, bbox_inches='tight')
+                buf.seek(0)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                st.download_button(
+                    "💾 下载图像",
+                    data=buf,
+                    file_name=f"flow_comparison_{timestamp}.png",
+                    mime="image/png"
+                )
             
             # 汇总指标表
             if summary_data:
