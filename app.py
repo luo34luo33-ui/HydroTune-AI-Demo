@@ -2010,7 +2010,8 @@ if uploaded_files and len(uploaded_files) > 0:
                     "💾 下载图像",
                     data=buf,
                     file_name=f"flow_comparison_{timestamp}.png",
-                    mime="image/png"
+                    mime="image/png",
+                    key="download_main_plot"
                 )
             
             # 汇总指标表
