@@ -50,3 +50,14 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Result files
+result/
+
+# Example data archives
+*.7z
+*.zip
+*.rar
+
+# Excel temp files
+~$*.xlsx

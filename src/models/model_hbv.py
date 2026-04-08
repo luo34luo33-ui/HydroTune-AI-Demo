@@ -194,6 +194,15 @@ class HBVModelAdapter(BaseModel):
         Returns:
             模拟流量序列 (m³/s), shape: (n_timesteps,)
         """
+        use_simple = False
+        if spatial_data is not None:
+            use_simple = spatial_data.get('use_simple_impl', False)
+        
+        if use_simple:
+            from src.hydro import hbv_simple
+            area = 150.7944 if spatial_data is None else spatial_data.get('area', 150.7944)
+            return hbv_simple.run_hbv_model(precip, evap, params, area)
+        
         if not HBV_AVAILABLE:
             raise RuntimeError(
                 "HBV模型不可用，请确保 HBV_model_structured 目录存在且代码完整"

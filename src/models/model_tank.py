@@ -82,6 +82,18 @@ class TankModel(BaseModel):
         np.ndarray
             模拟流量序列 (m³/s), shape: (n_timesteps,)
         """
+        use_simple = False
+        if spatial_data is not None:
+            use_simple = spatial_data.get('use_simple_impl', False)
+        
+        if use_simple:
+            from src.hydro import tank_simple
+            if spatial_data is None:
+                spatial_data = {'area': 150.7944, 'del_t': 24.0}
+            area = spatial_data.get('area', 150.7944)
+            del_t = spatial_data.get('del_t', 24.0)
+            return tank_simple.run_tank_model(precip, evap, params, area, del_t)
+        
         if spatial_data is None:
             spatial_data = {'area': 150.7944, 'del_t': 24.0}
         

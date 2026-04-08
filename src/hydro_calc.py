@@ -8,6 +8,13 @@ from scipy.optimize import differential_evolution, dual_annealing, minimize
 from typing import Dict, Callable, Tuple, List
 
 from .models.registry import ModelRegistry
+from .optimizers import (
+    optimize_two_stage,
+    optimize_pso,
+    optimize_ga,
+    optimize_sce,
+    optimize_de,
+)
 
 
 # ============================================================
@@ -342,17 +349,23 @@ def calibrate_model_fast(
             return 1e10
     
     if algorithm == 'two_stage' or algorithm == '两阶段算法(推荐)':
-        best_x, best_nse = _two_stage_optimize(objective, bounds, max_iter, n_params, progress_callback)
+        best_x, best_fun = optimize_two_stage(objective, bounds, max_iter, n_params, progress_callback)
+        best_nse = -best_fun
     elif algorithm == 'pso' or algorithm == 'PSO':
-        best_x, best_nse = _pso_optimize(objective, bounds, max_iter, n_params, algo_params, progress_callback)
+        best_x, best_fun = optimize_pso(objective, bounds, max_iter, n_params, algo_params, progress_callback)
+        best_nse = -best_fun
     elif algorithm == 'ga' or algorithm == '遗传算法(GA)':
-        best_x, best_nse = _ga_optimize(objective, bounds, max_iter, n_params, algo_params, progress_callback)
+        best_x, best_fun = optimize_ga(objective, bounds, max_iter, n_params, algo_params, progress_callback)
+        best_nse = -best_fun
     elif algorithm == 'sce' or algorithm == 'SCE-UA':
-        best_x, best_nse = _sce_optimize(objective, bounds, max_iter, n_params, progress_callback)
+        best_x, best_fun = optimize_sce(objective, bounds, max_iter, n_params, progress_callback)
+        best_nse = -best_fun
     elif algorithm == 'de' or algorithm == '差分进化(DE)':
-        best_x, best_nse = _de_optimize(objective, bounds, max_iter, n_params, algo_params, progress_callback)
+        best_x, best_fun = optimize_de(objective, bounds, max_iter, n_params, algo_params, progress_callback)
+        best_nse = -best_fun
     else:
-        best_x, best_nse = _two_stage_optimize(objective, bounds, max_iter, n_params, progress_callback)
+        best_x, best_fun = optimize_two_stage(objective, bounds, max_iter, n_params, progress_callback)
+        best_nse = -best_fun
     
     if routing_params_added:
         best_params = {k: v for k, v in zip(param_names[:-2], best_x[:-2])}

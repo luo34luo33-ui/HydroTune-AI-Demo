@@ -551,14 +551,14 @@ with st.sidebar:
 
     if algorithm == "PSO":
         st.subheader("粒子群优化 (PSO) 参数")
-        n_particles = st.slider("粒子数", 10, 100, 20, help="粒子数量越多搜索能力越强，但计算时间增加")
+        n_particles = st.slider("粒子数", 10, 100, 100, help="粒子数量越多搜索能力越强，但计算时间增加")
         w = st.slider("惯性权重 w", 0.0, 1.0, 0.7, 0.01, help="控制粒子运动惯性，值越大搜索范围越广")
         c1 = st.slider("个体学习因子 c1", 0.0, 2.0, 1.5, 0.1, help="控制粒子向自身最优位置移动的能力")
         c2 = st.slider("群体学习因子 c2", 0.0, 2.0, 1.5, 0.1, help="控制粒子向群体最优位置移动的能力")
         algo_params = {"n_particles": n_particles, "w": w, "c1": c1, "c2": c2}
     elif algorithm == "遗传算法(GA)":
         st.subheader("遗传算法 (GA) 参数")
-        pop_size = st.slider("种群大小", 10, 100, 20, help="种群数量越多遗传多样性越好")
+        pop_size = st.slider("种群大小", 10, 100, 50, help="种群数量越多遗传多样性越好")
         n_generations = st.slider("进化代数", 10, 100, 50, help="进化代数越多优化越充分")
         crossover_rate = st.slider("交叉率", 0.0, 1.0, 0.8, 0.05, help="染色体交叉产生新个体的概率")
         mutation_rate = st.slider("变异率", 0.0, 1.0, 0.1, 0.05, help="基因变异的概率，防止陷入局部最优")
@@ -573,7 +573,7 @@ with st.sidebar:
         st.subheader("差分进化 (DE) 参数")
         mutation_factor = st.slider("变异因子 F", 0.0, 2.0, 0.8, 0.1, help="变异缩放因子，控制差异向量权重，推荐0.5-1.0")
         crossover_prob = st.slider("交叉概率 CR", 0.0, 1.0, 0.7, 0.1, help="交叉概率，值越大交叉频率越高")
-        pop_size_de = st.slider("种群大小", 10, 100, 20, help="种群数量越多搜索能力越强")
+        pop_size_de = st.slider("种群大小", 10, 100, 50, help="种群数量越多搜索能力越强")
         algo_params = {"mutation_factor": mutation_factor, "crossover_prob": crossover_prob, 
                        "pop_size": pop_size_de}
     else:
