@@ -8,7 +8,7 @@ from .registry import ModelRegistry
 try:
     from .model_tank import TankModel
     ModelRegistry.register(TankModel())
-    print("[HydroTune-AI] Tank水箱模型(完整版)已注册")
+    print("[HydroTune-AI] tank水箱模型已注册")
 except ImportError as e:
     print(f"[HydroTune-AI] Tank水箱模型注册失败: {e}")
 
@@ -16,9 +16,9 @@ except ImportError as e:
 try:
     from .model_hbv import HBVModelAdapter
     ModelRegistry.register(HBVModelAdapter())
-    print("[HydroTune-AI] HBV模型(完整版)已注册")
+    print("[HydroTune-AI] HBV模型已注册")
 except ImportError as e:
-    print(f"[HydroTune-AI] HBV模型(完整版)注册失败: {e}")
+    print(f"[HydroTune-AI] HBV模型注册失败: {e}")
 
 # 注册新安江模型
 try:

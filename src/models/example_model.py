@@ -5,7 +5,7 @@
 .. deprecated::
     简化模型已废弃，请使用完整模型代替：
     - 水箱模型 → Tank水箱模型 (Tank水箱模型)
-    - HBV模型(完整版) → HBV模型 (HBV模型(完整版))
+    - HBV模型 → HBV模型
 """
 import warnings
 import numpy as np

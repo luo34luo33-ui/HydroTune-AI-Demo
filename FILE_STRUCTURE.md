@@ -335,7 +335,7 @@ ModelRegistry.register(XAJModelV2())
 
 | 属性/方法 | 功能 |
 |-----------|------|
-| `name` | "Tank水箱模型(完整版)" |
+| `name` | "tank水箱模型" |
 | `model_type` | "lumped" |
 | `param_bounds` | 返回18个Tank模型参数的取值范围 |
 | `default_params` | 返回默认参数值 |
@@ -358,7 +358,7 @@ ModelRegistry.register(XAJModelV2())
 
 | 属性/方法 | 功能 |
 |-----------|------|
-| `name` | "HBV模型(完整版)" |
+| `name` | "HBV模型" |
 | `model_type` | "lumped" |
 | `supports_hourly` | False（日尺度） |
 | `param_bounds` | 返回HBV模型参数的取值范围 |

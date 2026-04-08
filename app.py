@@ -233,7 +233,7 @@ st.caption("上传数据 → 智能清洗 → 多模型率定 → 自动报告")
 # ============================================================
 # 侧边栏
 # ============================================================
-RECOMMENDED_MODELS = ['HBV模型(完整版)', '新安江模型2', 'Tank水箱模型(完整版)']  # 启用三个模型
+RECOMMENDED_MODELS = ['HBV模型', '新安江模型2', 'tank水箱模型']  # 启用三个模型
 SKIP_MODELS = []
 
 
@@ -285,7 +285,7 @@ with st.sidebar:
     st.markdown("### 📊 模型状态")
     from src.models.registry import ModelRegistry
     all_models = ModelRegistry.list_models()
-    check_models = ['HBV模型(完整版)', '新安江模型2', 'Tank水箱模型(完整版)']  # 检查三个模型
+    check_models = ['HBV模型', '新安江模型2', 'tank水箱模型']  # 检查三个模型
     for model in check_models:
         if model in all_models:
             st.success(f"✅ {model}")
@@ -402,7 +402,7 @@ with st.sidebar:
                     for col in tank_df.columns
                     if col != '模型' and col not in ['k_routing', 'x_routing']
                 }
-                imported_params['Tank水箱模型(完整版)'] = tank_params
+                imported_params['tank水箱模型'] = tank_params
                 st.success(f"✅ Tank模型参数导入成功: {tank_params}")
             except Exception as e:
                 st.error(f" Tank参数解析失败: {e}")
@@ -418,7 +418,7 @@ with st.sidebar:
                 import pandas as pd
                 hbv_df = pd.read_csv(hbv_param_file)
                 hbv_params = {col: float(hbv_df[col].values[0]) for col in hbv_df.columns if col != '模型'}
-                imported_params['HBV模型(完整版)'] = hbv_params
+                imported_params['HBV模型'] = hbv_params
                 st.success(f"✅ HBV模型参数导入成功: {hbv_params}")
             except Exception as e:
                 st.error(f" HBV参数解析失败: {e}")
@@ -1863,8 +1863,8 @@ if uploaded_files and len(uploaded_files) > 0:
             
             model_colors = {
                 '新安江模型2': '#e74c3c',
-                'Tank水箱模型(完整版)': '#3498db',
-                'HBV模型(完整版)': '#2ecc71',
+                'tank水箱模型': '#3498db',
+                'HBV模型': '#2ecc71',
             }
             
             n_files = len(file_dfs)

@@ -12,7 +12,7 @@ class HBVRunner(BaseRunner):
     
     def __init__(self):
         super().__init__(None)
-        self._name = "HBV模型(完整版)"
+        self._name = "HBV模型"
         self.loader = HBVLoader()
     
     def run(self, precip: np.ndarray, evap: np.ndarray,

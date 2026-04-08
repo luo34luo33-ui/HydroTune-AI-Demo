@@ -111,7 +111,7 @@ def _register_all_schemas():
     # Tank Schema
     register_schema(ModelSchema(
         id='tank_v1',
-        name='Tank水箱模型(完整版)',
+        name='tank水箱模型',
         category=ModelCategory.TANK,
         description='Tank水箱模型 (Sugawara & Funiyuki, 1956) - 四层串联水箱结构',
         supports_hourly=True,
@@ -130,7 +130,7 @@ def _register_all_schemas():
     # HBV Schema
     register_schema(ModelSchema(
         id='hbv_v1',
-        name='HBV模型(完整版)',
+        name='HBV模型',
         category=ModelCategory.HBV,
         description='HBV水文模型 (Swedish Meteorological and Hydrological Institute) - 包含积雪模块',
         supports_hourly=False,

@@ -19,7 +19,7 @@ class TankRunner(BaseRunner):
     
     def __init__(self):
         super().__init__(None)
-        self._name = "Tank水箱模型(完整版)"
+        self._name = "tank水箱模型"
         self.loader = TankLoader()
     
     def run(self, precip: np.ndarray, evap: np.ndarray,
