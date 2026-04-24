@@ -7,21 +7,21 @@ import numpy as np
 from typing import Dict
 
 XAJ_PARAM_BOUNDS = {
-    'k': (0.7, 1.3),
-    'b': (0.1, 0.5),
-    'im': (0.001, 0.1),
-    'um': (10.0, 60.0),
-    'lm': (50.0, 150.0),
-    'dm': (40.0, 120.0),
-    'c': (0.1, 0.5),
-    'sm': (10.0, 80.0),
-    'ex': (1.0, 2.0),
-    'ki': (0.1, 0.5),
-    'kg': (0.1, 0.5),
-    'cs': (0.5, 0.98),
-    'l': (0, 20),
-    'ci': (0.5, 0.98),
-    'cg': (0.98, 0.999),
+    'K': (0.7, 1.3),
+    'B': (0.1, 0.5),
+    'IM': (0.001, 0.1),
+    'WUM': (10.0, 60.0),   # 对应原 um
+    'WLM': (50.0, 150.0),  # 对应原 lm
+    'WM': (100.0, 330.0),  # 对应原 dm，新版改为率定总蓄水容量 WM
+    'C': (0.1, 0.5),
+    'SM': (10.0, 80.0),
+    'EX': (1.0, 2.0),
+    'KI': (0.1, 0.5),
+    'KG': (0.1, 0.5),
+    'CS': (0.5, 0.98),
+    'L': (0, 20),
+    'CI': (0.5, 0.98),
+    'CG': (0.98, 0.999),
 }
 
 XAJ_PARAM_ORDER = [
@@ -38,6 +38,10 @@ def _constrain_ki_kg(ki: float, kg: float) -> tuple:
     return ki, kg
 
 
+import math
+import numpy as np
+from typing import Dict
+
 def run_xaj_model(
     precip: np.ndarray,
     evap: np.ndarray,
@@ -45,7 +49,7 @@ def run_xaj_model(
     area: float = 584.0,
 ) -> np.ndarray:
     """
-    运行新安江模型
+    运行新安江模型 (基于 xaj_core 核心代码完全翻译的纯 NumPy 版本)
     
     Args:
         precip: 降水序列 (mm)
@@ -56,132 +60,236 @@ def run_xaj_model(
     Returns:
         模拟流量序列 (m³/s)
     """
-    p = params
-    k = p.get('k', 1.0)
-    b = p.get('b', 0.3)
-    im = p.get('im', 0.01)
-    um = p.get('um', 20.0)
-    lm = p.get('lm', 70.0)
-    dm = p.get('dm', 60.0)
-    c = p.get('c', 0.15)
-    sm = p.get('sm', 20.0)
-    ex = p.get('ex', 1.5)
-    ki = p.get('ki', 0.3)
-    kg = p.get('kg', 0.4)
-    ki, kg = _constrain_ki_kg(ki, kg)
-    cs = p.get('cs', 0.8)
-    l = int(p.get('l', 1))
-    ci = p.get('ci', 0.8)
-    cg = p.get('cg', 0.995)
-    
     n = len(precip)
     if n == 0:
         return np.array([])
-    
-    wm = um + lm + dm
-    wum = um
-    wlm = lm
-    wdm = dm
-    
-    eu = np.zeros(n)
-    el = np.zeros(n)
-    ed = np.zeros(n)
-    imp = im
-    
-    wu = np.zeros(n)
-    wl = np.zeros(n)
-    wd = np.zeros(n)
-    iu = np.zeros(n)
-    
-    sm1 = np.zeros(n)
-    sm2 = np.zeros(n)
-    sm3 = np.zeros(n)
-    
-    qi = np.zeros(n)
-    qg = np.zeros(n)
-    
-    for t in range(n):
-        pe = precip[t] - evap[t] * k
         
-        if pe <= 0:
-            if t > 0:
-                eum = min(evap[t] * k, wu[t - 1] + iu[t - 1])
+    # --- 参数提取与默认值设置 (完全对齐 xaj_core) ---
+    K = params.get('K', 1.1)
+    B = params.get('B', 0.3)
+    C = params.get('C', 0.15)
+    WM = params.get('WM', 120.0)
+    WUM = params.get('WUM', 20.0)
+    WLM = params.get('WLM', 70.0)
+    IM = params.get('IM', 0.01)
+    SM = params.get('SM', 50.0)
+    EX = params.get('EX', 1.5)
+    
+    KG = params.get('KG', 0.3)
+    KI = params.get('KI', 0.15)
+    CG = params.get('CG', 0.95)
+    CI = params.get('CI', 0.8)
+    CS = params.get('CS', 0.6)
+    
+    L = int(params.get('L', 1))
+    X = params.get('X', 0.3)
+    T = params.get('T', 1.0)
+    
+    # 初始状态参数
+    WUM_init = params.get('WUM_init', 10.0)
+    WLM_init = params.get('WLM_init', 30.0)
+    WDM_init = params.get('WDM_init', 20.0)
+    S1_init = params.get('S1', 10.0)
+    FR1 = params.get('FR1', 0.3)
+    Q_init = params.get('Q', 5.0)
+    
+    n_reaches = int(params.get('n', 1))
+    
+    # 派生参数
+    WDM = max(0.0, float(WM - WUM - WLM))
+    WDM_init = min(WDM_init, WDM)
+    WMM = float(WM)
+    SMM = float(SM)
+    Sm = float(SM)
+
+    # --- 辅助边界函数 ---
+    def _clip01(x, eps=1e-12):
+        return float(np.clip(x, 0.0, 1.0 - eps))
+    def _pos(x, eps=1e-12):
+        return float(max(x, eps))
+
+    # --- 状态与中间序列初始化 ---
+    WU = np.zeros(n); WL = np.zeros(n); WD = np.zeros(n)
+    EU = np.zeros(n); EL = np.zeros(n); ED = np.zeros(n)
+    E = np.zeros(n); PE = np.zeros(n); W = np.zeros(n)
+    R = np.zeros(n); FR = np.zeros(n); S1 = np.zeros(n)
+    RS = np.zeros(n); RI = np.zeros(n); RG = np.zeros(n)
+    QS = np.zeros(n); QI = np.zeros(n); QG = np.zeros(n)
+    QT = np.zeros(n); Qt = np.zeros(n)
+    
+    Q_reaches = np.zeros((n_reaches + 1, n))
+    
+    P_perv = (1.0 - IM) * precip
+    P_im = IM * precip
+    EP = evap * K
+    U = area / (3.6 * T)
+
+    # 初始化随时间迭代的状态变量
+    wu = WUM_init
+    wl = WLM_init
+    wd = WDM_init
+    s1 = S1_init
+    fr_prev = FR1
+
+    # --- 核心逐时段演算 ---
+    for i in range(n):
+        # 1. 土壤含水量计算 (WU, WL, WD)
+        if i == 0:
+            wu = WUM_init
+            wl = WLM_init
+            wd = WDM_init
+        else:
+            infi = PE[i - 1] - R[i - 1]
+            wu = wu + infi
+            if wu < 0:
+                wl = wl + wu
+                wu = 0
+                if wl < 0:
+                    wd = wd + wl
+                    wl = 0
+                    if wd < 0:
+                        wd = 0
+            if wu > WUM:
+                wl = wl + wu - WUM
+                wu = WUM
+                if wl > WLM:
+                    wd = wd + wl - WLM
+                    wl = WLM
+                    if wd > WDM:
+                        wd = WDM
+        WU[i] = wu; WL[i] = wl; WD[i] = wd
+
+        # 2. 蒸散发计算 (EU, EL, ED)
+        Pp = P_perv[i]
+        ep = EP[i]
+        if wu + Pp >= ep:
+            eu = ep; el = 0; ed = 0
+        elif wu + Pp < ep and wl >= C * WLM:
+            eu = wu + Pp
+            el = (ep - eu) * (wl / _pos(WLM))
+            ed = 0
+        elif wu + Pp < ep and C * (ep - eu) <= wl and wl < C * WLM:
+            eu = wu + Pp
+            el = C * (ep - eu)
+            ed = 0
+        elif wu + Pp < ep and wl < C * (ep - eu):
+            eu = wu + Pp
+            el = wl
+            ed = C * (ep - eu) - el
+        EU[i] = eu; EL[i] = el; ED[i] = ed
+
+        # 3. 总蒸散发与净雨 (E, PE, W)
+        E[i] = eu + el + ed
+        PE[i] = Pp - E[i]
+        W[i] = wu + wl + wd
+
+        # 4. 产流计算 (R)
+        if PE[i] > 0:
+            one_minus_W_over_WM = _clip01(1.0 - W[i] / _pos(WM))
+            a = WMM * (1.0 - math.pow(one_minus_W_over_WM, 1.0 / (1.0 + B)))
+            if a + PE[i] <= WMM:
+                inner = _clip01(1.0 - (PE[i] + a) / _pos(WMM))
+                R[i] = PE[i] + W[i] - WM + WM * math.pow(inner, (B + 1.0))
             else:
-                eum = min(evap[t] * k, wum)
-            
-            eu[t] = eum
-            el[t] = 0
-            ed[t] = 0
-            
-            iuo = iu[t - 1] if t > 0 else wum
-            wu[t] = max(wu[t - 1] - eu[t], 0) if t > 0 else max(wum - eu[t], 0)
-            iu[t] = max(iuo - eu[t], 0)
-            wl[t] = wl[t - 1] if t > 0 else wlm
-            wd[t] = wd[t - 1] if t > 0 else wdm
+                R[i] = PE[i] - (WM - W[i])
         else:
-            iuo = iu[t - 1] if t > 0 else wum
-            iu[t] = iuo + pe
-            
-            if iu[t] <= wum:
-                eu[t] = min(evap[t] * k, wu[t - 1] if t > 0 else wum)
-                wu[t] = max(wu[t - 1] - eu[t], 0) if t > 0 else max(wum - eu[t], 0)
-                el[t] = 0
-                ed[t] = 0
+            R[i] = 0.0
+
+        # 5. 产流面积比重计算 (FR)
+        if R[i] > 0:
+            denom = _pos(PE[i])
+            fr = R[i] / denom
+            FR[i] = min(1.0, max(fr, 1e-9))
+        else:
+            FR[i] = fr_prev if i > 0 else FR1
+
+        # 6. 分水源计算 (RS, RG, RI)
+        S1[i] = s1
+        FRi = max(float(FR[i]), 1e-9)
+        FRim1 = max(float(FR[i-1]) if i > 0 else FR1, 1e-9)
+
+        if PE[i] > 0:
+            if i == 0:
+                ratio = ((S1[i]*FR1) / _pos(FRi)) / _pos(Sm)
             else:
-                eu[t] = evap[t] * k
-                wu[t] = max(iu[t] - wum, 0)
-                iu[t] = wum
-                
-                if wl[t - 1] if t > 0 else wlm > c * (wl[t - 1] if t > 0 else wlm):
-                    eel = evap[t] * k * c
+                ratio = ((S1[i]*FRim1) / _pos(FRi)) / _pos(Sm)
+            ratio = _clip01(ratio)
+            AU = SMM * (1.0 - math.pow(1.0 - ratio, 1.0 / (1.0 + EX)))
+
+            if PE[i] + AU < SMM:
+                if i == 0:
+                    base = PE[i] + (S1[i]*FR1)/_pos(FRi) - Sm
                 else:
-                    eel = evap[t] * k
-                
-                if (wl[t - 1] if t > 0 else wlm) > c * (wl[t - 1] if t > 0 else wlm):
-                    el[t] = min(eel, wl[t - 1] - c * (wl[t - 1] if t > 0 else wlm)) if t > 0 else min(eel, wlm - c * wlm)
+                    base = PE[i] + (S1[i]*FRim1)/_pos(FRi) - Sm
+                inner = _clip01(1.0 - (PE[i] + AU) / _pos(SMM))
+                RS_raw = FRi * (base + Sm * math.pow(inner, 1.0 + EX))
+            else:
+                if i == 0:
+                    RS_raw = FRi * (PE[i] + (S1[i]*FR1)/_pos(FRi) - Sm)
                 else:
-                    el[t] = 0
-                
-                wl[t] = max((wl[t - 1] if t > 0 else wlm) - el[t], 0)
-                
-                if (wd[t - 1] if t > 0 else wdm) > c * (wd[t - 1] if t > 0 else wdm):
-                    ed[t] = min(eel * (wd[t - 1] / (c * (wd[t - 1] if t > 0 else wdm))), wd[t - 1] - c * (wd[t - 1] if t > 0 else wdm)) if t > 0 else 0
-                else:
-                    ed[t] = 0
-                
-                wd[t] = max((wd[t - 1] if t > 0 else wdm) - ed[t], 0)
-        
-        sm1[t] = sm * (1 + ex)
-        
-        if t == 0:
-            sm1[0] = sm * 0.5
-            sm2[0] = sm * 0.3
-            sm3[0] = sm * 0.2
-        
-        fr = (sm1[t] / sm) ** ex if sm > 0 else 0
-        
-        if iu[t] > wum:
-            r = (iu[t] - wum) ** 2 / (iu[t] - wum + sm1[t])
+                    RS_raw = FRi * (PE[i] + (S1[i]*FRim1)/_pos(FRi) - Sm)
+
+            R_i = float(R[i]) if np.isfinite(R[i]) else 0.0
+            RS[i] = float(np.clip(RS_raw, 0.0, R_i))
+
+            if i == 0:
+                S = (S1[i]*FR1)/_pos(FRi) + (R[i]-RS[i]) / _pos(FRi)
+            else:
+                S = (S1[i]*FRim1)/_pos(FRi) + (R[i]-RS[i]) / _pos(FRi)
+
+            RI[i] = KI * S * FRi
+            RG[i] = KG * S * FRi
+            s1 = S * (1.0 - KI - KG)
         else:
-            r = 0
-        
-        qs0 = r / (r + sm) if sm > 0 else 0
-        
-        if fr > 0:
-            qs = fr * qs0
-            qss = (1 - fr) * qs0
+            if i == 0: S = (S1[i]*FR1)/_pos(FRi)
+            else:      S = (S1[i]*FRim1)/_pos(FRi)
+            s1 = S * (1.0 - KG - KI)
+            RS[i] = 0.0
+            RG[i] = KG * S * FRi
+            RI[i] = KI * S * FRi
+            
+        fr_prev = FR[i]
+
+        # 7. 坡面及地下水汇流计算 (QS, QI, QG)
+        QS[i] = max(0.0, float((RS[i] + P_im[i]) * U))
+
+        if i == 0:
+            QI[i] = 1/3 * Q_init
+            QG[i] = 1/3 * Q_init
         else:
-            qs = 0
-            qss = 0
+            QI[i] = CI*QI[i-1] + (1-CI)*RI[i]*U
+            QG[i] = CG*QG[i-1] + (1-CG)*RG[i]*U
+            
+        QT[i] = QS[i] + QI[i] + QG[i]
         
-        qi[t] = qs * ki * sm
-        qg[t] = qss * kg * sm
-        
-        if t > l:
-            qg[t] = qg[t - l]
-            qi[t] = qi[t - l]
+        # 滞后与消退
+        if 0 <= i <= L:
+            Qt[i] = Q_init
+        else:
+            Qt[i] = Qt[i-1]*CS + (1-CS)*QT[i-L]
+
+        # 8. 河道马斯京根演算法演算 (Qi)
+        Q_reaches[0, i] = Qt[i]
+        if n_reaches > 0:
+            K_l = T
+            x_l = 0.5 - n_reaches*(1-2*X)/2
+            denom = 0.5*T + K_l - K_l*x_l
+            C0 = (0.5*T - K_l*x_l) / denom
+            C1 = (0.5*T + K_l*x_l) / denom
+            C2 = 1.0 - C0 - C1
+            
+            for p in range(n_reaches):
+                I2 = Q_reaches[p, i]
+                if i == 0:
+                    I1 = Q_init
+                    Q1_prev = Q_init
+                else:
+                    I1 = Q_reaches[p, i-1]
+                    Q1_prev = Q_reaches[p+1, i-1]
+                Q_reaches[p+1, i] = C0*I2 + C1*I1 + C2*Q1_prev
+
+    # 提取最终断面的演进流量序列
+    Q_final = Q_reaches[-1, :]
     
-    unit_conv = (area * 1000) / 3600
-    discharge = unit_conv * (qi + qg)
-    
-    return np.maximum(discharge, 0)
+    # 清理所有潜在的负值以符合自然规律
+    return np.clip(np.nan_to_num(Q_final, nan=0.0), 0.0, None)

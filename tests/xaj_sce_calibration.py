@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""XAJ模型 + SCE算法率定"""
+"""XAJ模型 + SCE算法率定 (适配完整版新安江模型)"""
 import os, sys, numpy as np, pandas as pd, matplotlib.pyplot as plt
 from glob import glob
 sys.path.insert(0, os.path.dirname(__file__))
@@ -14,11 +14,13 @@ def calc_nse(o, s):
     d = np.sum((o[m] - np.mean(o[m]))**2)
     return 1 - np.sum((o[m] - s[m])**2) / d if d > 0 else -9999
 
-def musk(u, k, x):
+def musk(u, k, x, dt=1.0):
     n = len(u)
     if n == 0: return np.array([])
-    d = k * (1 - x) + 0.5
-    C0, C1, C2 = (-k*x+0.5)/d, (k*x+0.5)/d, (k*(1-x)-0.5)/d
+    # 修正为更标准的马斯京根分母计算公式，增加 dt 参数保护
+    d = k - k*x + 0.5*dt
+    if abs(d) < 1e-12: return u
+    C0, C1, C2 = (-k*x+0.5*dt)/d, (k*x+0.5*dt)/d, (k-k*x-0.5*dt)/d
     r = np.zeros(n)
     r[0] = u[0]
     for t in range(1, n): r[t] = C0*u[t] + C1*u[t-1] + C2*r[t-1]
@@ -32,7 +34,13 @@ def load_events():
             df = df.rename(columns={COL_MAPPING[k]: k for k in COL_MAPPING if COL_MAPPING[k] in df.columns})
             if 'precip' not in df.columns or 'flow' not in df.columns: continue
             if 'evap' not in df.columns: df['evap'] = 0.0
-            events.append({'name': os.path.basename(f).replace('.csv',''), 'precip': df['precip'].fillna(0).values, 'evap': df['evap'].fillna(0).values, 'flow': df['flow'].fillna(0).values, 'upstream': df['upstream'].fillna(0).values if 'upstream' in df.columns else None})
+            events.append({
+                'name': os.path.basename(f).replace('.csv',''), 
+                'precip': df['precip'].fillna(0).values, 
+                'evap': df['evap'].fillna(0).values, 
+                'flow': df['flow'].fillna(0).values, 
+                'upstream': df['upstream'].fillna(0).values if 'upstream' in df.columns else None
+            })
         except: continue
     return events
 
@@ -41,6 +49,11 @@ def run_calibration():
     events = load_events()
     pnames = list(XAJ_PARAM_BOUNDS.keys()) + ['k_routing', 'x_routing']
     bounds = list(XAJ_PARAM_BOUNDS.values()) + [MUSKINGUM_BOUNDS['k_routing'], MUSKINGUM_BOUNDS['x_routing']]
+    
+    # 确保输出目录及其子文件夹存在，防止写入时报错
+    os.makedirs(OUTPUT_PARAMS, exist_ok=True)
+    os.makedirs(os.path.join(OUTPUT_PLOTS, "xaj"), exist_ok=True)
+    os.makedirs(os.path.join(OUTPUT_DATA, "xaj"), exist_ok=True)
     
     def obj(p):
         mp = {k:v for k,v in zip(pnames[:-2], p[:-2])}
@@ -80,7 +93,13 @@ def run_calibration():
         ax_precip.set_ylim(max(precip_plot) * 5, 0)
         ax_precip.set_ylabel('Precip (mm)', fontsize=9)
         
-        param_text = "\n".join([f"{k}: {v:.3f}" for k, v in bp.items()])
+        # 将参数分两列显示，防止新版参数过多超出绘图区边界
+        items = list(bp.items())
+        half = len(items) // 2 + len(items) % 2
+        col1 = [f"{k}: {v:.3f}" for k, v in items[:half]]
+        col2 = [f"{k}: {v:.3f}" for k, v in items[half:]]
+        param_text = "\n".join([f"{c1:<15} {c2}" for c1, c2 in zip(col1, col2 + [''] * (len(col1)-len(col2)))])
+        
         ax_flow.text(0.02, 0.98, param_text, transform=ax_flow.transAxes, fontsize=7,
                 verticalalignment='top', fontfamily='monospace',
                 bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
