@@ -1751,7 +1751,7 @@ if uploaded_files and len(uploaded_files) > 0:
                             "simulated": simulated,
                             "calib_data": (calib_events[0]['precip'], calib_events[0]['evap'], calib_events[0]['flow']),
                         }
-                        st.write(f"  ✅ {model_name}: 率定期平均NSE={calibration_results[model_name]['nse']:.4f}")
+                        st.write(f"  ✅ {model_name}: 率定完成")
                     else:
                         st.write(f"  ❌ {model_name}: 率定返回None")
             
@@ -1931,11 +1931,160 @@ if uploaded_files and len(uploaded_files) > 0:
                     calibration_results[model_name]['rmse'] = np.mean(calib_rmse_list)
                     calibration_results[model_name]['pbias'] = np.mean(calib_pbias_list)
             
+            # 初始化XGB校正数据字典（供后续绘图使用）
+            xgb_correction_data = {}
+            
+            # XGBoost误差校正（多文件模式）
+            if enable_xgb_correction:
+                st.divider()
+                st.subheader("🔧 XGBoost 误差校正")
+                
+                try:
+                    from src.app.error_correction import (
+                        ErrorCorrector, select_best_model, apply_error_correction
+                    )
+                    from src.hydro_calc import calc_nse
+                    
+                    with st.spinner("选择最优模型并训练误差校正器..."):
+                        best_name, best_result = select_best_model(calibration_results)
+                    
+                    if best_name and best_result is not None:
+                        st.success(f"✅ 最优模型: {best_name} (NSE={best_result['nse']:.4f})")
+                        
+                        model = ModelRegistry.get_model(best_name)
+                        best_params = best_result['params']
+                        
+                        spatial_data = {'area': catchment_area}
+                        if best_name == '新安江模型2':
+                            safe_params = best_params.copy()
+                            ki = min(safe_params.get('KI', 0.3), 0.45)
+                            kg = min(safe_params.get('KG', 0.3), 0.45)
+                            if ki + kg >= 0.9:
+                                ki = 0.3
+                                kg = 0.3
+                            safe_params['KI'] = ki
+                            safe_params['KG'] = kg
+                            safe_params['Area'] = catchment_area
+                        else:
+                            safe_params = best_params.copy()
+                        
+                        st.info(f"📊 对所有场次进行XGB误差校正")
+                        
+                        train_files_data = calib_files
+                        test_files_data = file_data_list  # 所有场次都进行XGB校正
+                        
+                        sim_cache = {}
+                        debug_failed = []
+                        
+                        train_precip_events = []
+                        train_flow_events = []
+                        train_sim_events = []
+                        
+                        for f in train_files_data:
+                            try:
+                                sim = model.run(f['precip'], f['evap'], safe_params, spatial_data)
+                                if sim is not None and len(sim) > 0:
+                                    if enable_upstream_routing and f.get('upstream') is not None:
+                                        sim = apply_upstream_routing(sim, f['upstream'], k_routing, x_routing)
+                                    
+                                    if warmup_steps > 0 and len(f['precip']) > warmup_steps:
+                                        train_precip_events.append(f['precip'][warmup_steps:])
+                                        train_flow_events.append(f['flow'][warmup_steps:])
+                                        train_sim_events.append(sim[warmup_steps:])
+                                    else:
+                                        train_precip_events.append(f['precip'])
+                                        train_flow_events.append(f['flow'])
+                                        train_sim_events.append(sim)
+                                else:
+                                    debug_failed.append((f['file_name'], 'sim is None or empty'))
+                            except Exception as e:
+                                debug_failed.append((f['file_name'], str(e)))
+                        
+                        if debug_failed:
+                            st.warning(f"⚠️ {len(debug_failed)}个率定场次运行失败: {debug_failed[:5]}...")
+                        
+                        if len(train_precip_events) < 3:
+                            st.warning("⚠️ 率定场次少于3个，数据量不足以训练 XGB 误差校正模型。")
+                            xgb_correction_data = {}
+                        else:
+                            corrector = ErrorCorrector(xgb_params=xgb_params)
+                            corrector.train_by_events(
+                                train_precip_events, train_flow_events, train_sim_events, test_event_ratio=0.0
+                            )
+                            st.success(f"✅ XGB模型训练完成: 使用 {len(train_precip_events)} 个率定场次进行训练。")
+                            
+                            xgb_correction_data = {}
+                            correction_results_list = []
+                            
+                            for idx, sf in enumerate(test_files_data):
+                                try:
+                                    simulated = model.run(
+                                        sf['precip'],
+                                        sf['evap'],
+                                        safe_params,
+                                        spatial_data
+                                    )
+                                    
+                                    if simulated is None or len(simulated) == 0:
+                                        continue
+                                    
+                                    if enable_upstream_routing and sf.get('upstream') is not None:
+                                        simulated = apply_upstream_routing(
+                                            simulated, sf['upstream'], k_routing, x_routing
+                                        )
+                                    
+                                    if warmup_steps > 0 and len(sf['flow']) > warmup_steps:
+                                        flow_plot = sf['flow'][warmup_steps:]
+                                        simulated_plot = simulated[warmup_steps:]
+                                        precip_plot = sf['precip'][warmup_steps:]
+                                    else:
+                                        flow_plot = sf['flow']
+                                        simulated_plot = simulated
+                                        precip_plot = sf['precip']
+                                    
+                                    corrected_plot = corrector.correct_with_true_error_lags(
+                                        precip_plot, flow_plot, simulated_plot
+                                    )
+                                    
+                                    nse_before = calc_nse(flow_plot, simulated_plot)
+                                    nse_after = calc_nse(flow_plot, corrected_plot)
+                                    rmse_after = calc_rmse(flow_plot, corrected_plot)
+                                    pbias_after = calc_pbias(flow_plot, corrected_plot)
+                                    
+                                    xgb_correction_data[sf['file_name']] = {
+                                        'corrected': corrected_plot,
+                                        'flow': flow_plot,
+                                        'nse': nse_after,
+                                        'kge': nse_after,
+                                        'rmse': rmse_after,
+                                        'pbias': pbias_after,
+                                        'best_model': best_name,
+                                    }
+                                    
+                                    correction_results_list.append({
+                                        'file_name': sf['file_name'],
+                                        'nse_before': nse_before,
+                                        'nse_after': nse_after,
+                                        'nse_improvement': nse_after - nse_before,
+                                    })
+                                except Exception as e:
+                                    st.error(f"⚠️ {sf['file_name']}: 处理失败 - {str(e)}")
+                    else:
+                        st.warning("无法选择最优模型进行误差校正")
+                except Exception as e:
+                    st.warning(f"误差校正功能暂不可用: {str(e)}")
+            else:
+                st.info("ℹ️ XGBoost误差校正已禁用")
+            
             # ============================================================
             # 📊 绘图：每个文件一张图
             # ============================================================
             summary_data = []
             all_results = {}
+            
+            # 确保xgb_correction_data始终有定义
+            if 'xgb_correction_data' not in locals():
+                xgb_correction_data = {}
             
             model_colors = {
                 '新安江模型2': '#e74c3c',
@@ -2062,6 +2211,32 @@ if uploaded_files and len(uploaded_files) > 0:
                         "PBIAS": bma_pbias
                     })
                 
+                # 添加XGB误差校正曲线
+                xgb_in_data = xgb_correction_data and file_name in xgb_correction_data
+                if xgb_in_data:
+                    xgb_data = xgb_correction_data[file_name]
+                    corrected_plot = xgb_data['corrected']
+                    
+                    if len(corrected_plot) == len(flow_arr_plot):
+                        xgb_nse = xgb_data['nse']
+                        xgb_rmse = xgb_data['rmse']
+                        xgb_pbias = xgb_data['pbias']
+                        xgb_model = xgb_data['best_model']
+                        label = f'{xgb_model}-XGB (NSE={xgb_nse:.3f})'
+                        ax.plot(corrected_plot, color='#f39c12', linestyle='-.', 
+                                label=label, linewidth=2.5, alpha=0.9)
+                        
+                        summary_data.append({
+                            "文件": file_name,
+                            "场次": "整场洪水",
+                            "类型": event_type,
+                            "模型": f"{xgb_model}-XGB",
+                            "NSE": xgb_nse,
+                            "KGE": xgb_data['kge'],
+                            "RMSE": xgb_rmse,
+                            "PBIAS": xgb_pbias
+                        })
+                
                 ax.set_title(f"{file_name} [{event_type}]", fontsize=14)
                 ax.legend(fontsize=9, loc='upper right')
                 ax.grid(True, alpha=0.3)
@@ -2114,7 +2289,7 @@ if uploaded_files and len(uploaded_files) > 0:
                     st.divider()
                     st.subheader("📊 模型表现对比")
                     
-                    col1, col2 = st.columns(2)
+                    col1, col2, col3 = st.columns(3)
                     with col1:
                         st.markdown("**率定场次平均**")
                         calib_nse = np.mean([d['NSE'] for d in calib_data])
@@ -2136,6 +2311,21 @@ if uploaded_files and len(uploaded_files) > 0:
                         st.metric("KGE", f"{valid_kge:.4f}")
                         st.metric("RMSE", f"{valid_rmse:.4f}")
                         st.metric("PBIAS", f"{valid_pbias:.2f}%")
+                    
+                    with col3:
+                        st.markdown("**XGB校正平均**")
+                        xgb_data = [d for d in summary_data if '-XGB' in d['模型']]
+                        if xgb_data:
+                            xgb_nse = np.mean([d['NSE'] for d in xgb_data])
+                            xgb_kge = np.mean([d['KGE'] for d in xgb_data])
+                            xgb_rmse = np.mean([d['RMSE'] for d in xgb_data])
+                            xgb_pbias = np.mean([d['PBIAS'] for d in xgb_data])
+                            st.metric("NSE", f"{xgb_nse:.4f}")
+                            st.metric("KGE", f"{xgb_kge:.4f}")
+                            st.metric("RMSE", f"{xgb_rmse:.4f}")
+                            st.metric("PBIAS", f"{xgb_pbias:.2f}%")
+                        else:
+                            st.info("无XGB数据")
                 
                 # 统一参数表格
                 st.divider()
@@ -2145,189 +2335,6 @@ if uploaded_files and len(uploaded_files) > 0:
                         st.markdown(f"**率定NSE**: {calib_result['nse']:.4f}")
                         param_df = generate_param_table(model_name, calib_result['params'])
                         st.dataframe(param_df, use_container_width=True, hide_index=True)
-            
-# XGBoost误差校正（多文件模式）
-            if enable_xgb_correction:
-                st.divider()
-                st.subheader("🔧 XGBoost 误差校正")
-                
-                try:
-                    from src.app.error_correction import (
-                        ErrorCorrector, select_best_model, apply_error_correction
-                    )
-                    from src.hydro_calc import calc_nse
-                    
-                    with st.spinner("选择最优模型并训练误差校正器..."):
-                        best_name, best_result = select_best_model(calibration_results)
-                    
-                    if best_name and best_result is not None:
-                        st.success(f"✅ 最优模型: {best_name} (NSE={best_result['nse']:.4f})")
-                        
-                        model = ModelRegistry.get_model(best_name)
-                        best_params = best_result['params']
-                        
-                        spatial_data = {'area': catchment_area}
-                        if best_name == '新安江模型2':
-                            safe_params = best_params.copy()
-                            ki = min(safe_params.get('KI', 0.3), 0.45)
-                            kg = min(safe_params.get('KG', 0.3), 0.45)
-                            if ki + kg >= 0.9:
-                                ki = 0.3
-                                kg = 0.3
-                            safe_params['KI'] = ki
-                            safe_params['KG'] = kg
-                            safe_params['Area'] = catchment_area
-                        else:
-                            safe_params = best_params.copy()
-                        
-                        # 选择验证场次用于测试
-                        n_select = min(4, len(valid_files))
-                        selected_valid = np.random.choice(len(valid_files), n_select, replace=False)
-                        selected_files = [valid_files[i] for i in selected_valid]
-                        
-                        st.info(f"📊 随机选取 {n_select} 场验证洪水进行误差校正")
-                        
-                        # 1. 明确划分训练和测试数据来源 (杜绝数据泄露)
-                        train_files_data = calib_files  # XGBoost 只拿率定场次去训练
-                        test_files_data = selected_files  # 界面只展示验证场次
-                        
-                        # 用一个字典缓存模拟结果，避免重复运算
-                        sim_cache = {}
-                        debug_failed = []
-                        
-                        # 2. 准备 XGBoost 训练数据
-                        train_precip_events = []
-                        train_flow_events = []
-                        train_sim_events = []
-                        
-                        for f in train_files_data:
-                            try:
-                                sim = model.run(f['precip'], f['evap'], safe_params, spatial_data)
-                                if sim is not None and len(sim) > 0:
-                                    if enable_upstream_routing and f.get('upstream') is not None:
-                                        sim = apply_upstream_routing(sim, f['upstream'], k_routing, x_routing)
-                                    
-                                    # 切除预热期
-                                    if warmup_steps > 0 and len(f['precip']) > warmup_steps:
-                                        train_precip_events.append(f['precip'][warmup_steps:])
-                                        train_flow_events.append(f['flow'][warmup_steps:])
-                                        train_sim_events.append(sim[warmup_steps:])
-                                    else:
-                                        train_precip_events.append(f['precip'])
-                                        train_flow_events.append(f['flow'])
-                                        train_sim_events.append(sim)
-                                else:
-                                    debug_failed.append((f['file_name'], 'sim is None or empty'))
-                            except Exception as e:
-                                debug_failed.append((f['file_name'], str(e)))
-                        
-                        if debug_failed:
-                            st.warning(f"⚠️ {len(debug_failed)}个率定场次运行失败: {debug_failed[:5]}...")
-                        
-                        # 3. 训练 XGBoost 模型
-                        if len(train_precip_events) < 3:
-                            st.warning("⚠️ 率定场次少于3个，数据量不足以训练 XGB 误差校正模型。")
-                        else:
-                            corrector = ErrorCorrector(xgb_params=xgb_params)
-                            # 直接全部用于训练，不在这里划分测试集
-                            corrector.train_by_events(
-                                train_precip_events, train_flow_events, train_sim_events, test_event_ratio=0.0
-                            )
-                            st.success(f"✅ XGB模型训练完成: 使用 {len(train_precip_events)} 个率定场次进行训练。")
-                            
-                            correction_results_list = []
-                            
-                            # 4. 在独立的验证集上评估并展示
-                            for idx, sf in enumerate(test_files_data):
-                                with st.expander(f"📊 验证洪水场次 {idx+1}: {sf['file_name']}", expanded=True):
-                                    try:
-                                        simulated = model.run(
-                                            sf['precip'],
-                                            sf['evap'],
-                                            safe_params,
-                                            spatial_data
-                                        )
-                                        
-                                        if simulated is None or len(simulated) == 0:
-                                            continue
-                                        
-                                        if enable_upstream_routing and sf.get('upstream') is not None:
-                                            simulated = apply_upstream_routing(
-                                                simulated, sf['upstream'], k_routing, x_routing
-                                            )
-                                        
-                                        # 切除预热期用于绘图和算 NSE
-                                        if warmup_steps > 0 and len(sf['flow']) > warmup_steps:
-                                            flow_plot = sf['flow'][warmup_steps:]
-                                            simulated_plot = simulated[warmup_steps:]
-                                            precip_plot = sf['precip'][warmup_steps:]
-                                        else:
-                                            flow_plot = sf['flow']
-                                            simulated_plot = simulated
-                                            precip_plot = sf['precip']
-                                        
-                                        # 执行校正
-                                        corrected_plot = corrector.correct_with_true_error_lags(
-                                            precip_plot, flow_plot, simulated_plot
-                                        )
-                                        
-                                        nse_before = calc_nse(flow_plot, simulated_plot)
-                                        nse_after = calc_nse(flow_plot, corrected_plot)
-                                        
-                                        col1, col2, col3 = st.columns(3)
-                                        with col1:
-                                            st.metric("校正前NSE", f"{nse_before:.4f}")
-                                        with col2:
-                                            st.metric("校正后NSE", f"{nse_after:.4f}")
-                                        with col3:
-                                            st.metric("NSE提升", f"{nse_after - nse_before:+.4f}", 
-                                                      delta=nse_after - nse_before)
-                                        
-                                        x = np.arange(len(flow_plot))
-                                        xlabel_text = "时间(天)" if user_timestep == 'daily' else "时间(h)"
-                                        
-                                        fig_ec, ax_ec = plt.subplots(figsize=(14, 5), dpi=150)
-                                        ax_ec.plot(x, flow_plot, 'k-', linewidth=2, label='实测流量', alpha=0.8)
-                                        ax_ec.plot(x, simulated_plot, 'b--', linewidth=1.5,
-                                                 label=f"原始 ({best_name})", alpha=0.6)
-                                        ax_ec.plot(x, corrected_plot, 'r-', linewidth=1.5,
-                                                 label="XGB校正后", alpha=0.8)
-                                        ax_ec.set_xlabel(xlabel_text, fontsize=12)
-                                        ax_ec.set_ylabel(r'流量 ($m^3/s$)', fontsize=12)
-                                        ax_ec.set_title(f"{sf['file_name']} - {best_name} + XGB误差校正", fontsize=14)
-                                        ax_ec.legend(fontsize=10, loc='upper right')
-                                        ax_ec.grid(True, alpha=0.3)
-                                        st.pyplot(fig_ec)
-                                        
-                                        correction_results_list.append({
-                                            'file_name': sf['file_name'],
-                                            'nse_before': nse_before,
-                                            'nse_after': nse_after,
-                                            'nse_improvement': nse_after - nse_before,
-                                        })
-                                    except Exception as e:
-                                        st.error(f"⚠️ {sf['file_name']}: 处理失败 - {str(e)}")
-                            
-                            if correction_results_list:
-                                st.divider()
-                                st.subheader("📊 XGB误差校正汇总")
-                                avg_before = np.mean([r['nse_before'] for r in correction_results_list])
-                                avg_after = np.mean([r['nse_after'] for r in correction_results_list])
-                                avg_improvement = np.mean([r['nse_improvement'] for r in correction_results_list])
-                                
-                                col1, col2, col3 = st.columns(3)
-                                with col1:
-                                    st.metric("平均校正前NSE", f"{avg_before:.4f}")
-                                with col2:
-                                    st.metric("平均校正后NSE", f"{avg_after:.4f}")
-                                with col3:
-                                    st.metric("平均NSE提升", f"{avg_improvement:+.4f}", delta=avg_improvement)
-                    else:
-                        st.warning("无法选择最优模型进行误差校正")
-                except Exception as e:
-                    st.warning(f"误差校正功能暂不可用: {str(e)}")
-            else:
-                st.info("ℹ️ XGBoost误差校正已禁用")
             
             # 多文件模式AI报告
             st.divider()
