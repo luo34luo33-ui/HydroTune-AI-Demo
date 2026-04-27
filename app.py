@@ -48,62 +48,29 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# 设置中文字体（兼容本地和云端）
+# 设置中文字体
 import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
-import platform
+from matplotlib import font_manager
 import os
 
-available_fonts = [f.name for f in fm.fontManager.ttflist]
+# 尝试从项目目录加载 simsun.ttc 字体
+font_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "simsun.ttc")
 
-# Windows 尝试从系统字体目录加载
-if platform.system() == "Windows":
-    font_paths = [
-        r"C:\Windows\Fonts",
-        r"C:\Windows\Fonts\simhei.ttf",
-        r"C:\Windows\Fonts\msyh.ttc",
-        r"C:\Windows\Fonts\simkai.ttf",
-        r"C:\Windows\Fonts\simsun.ttc",
-    ]
-    for fp in font_paths:
-        if os.path.exists(fp):
-            try:
-                fm.fontManager.addfont(fp)
-            except:
-                pass
+if os.path.exists(font_path):
+    font_manager.fontManager.addfont(font_path)
+    prop = font_manager.FontProperties(fname=font_path)
+    chinese_font = prop.get_name()
+    print(f"[HydroTune-AI] 已加载字体: {chinese_font}")
+else:
+    # 回退到系统字体
+    import platform
+    available_fonts = [f.name for f in font_manager.fontManager.ttflist]
+    chinese_fonts = ["SimHei", "Microsoft YaHei", "SimSun", "KaiTi", "PingFang SC"]
+    chinese_font = next((f for f in chinese_fonts if f in available_fonts), "sans-serif")
+    print(f"[HydroTune-AI] 使用系统字体: {chinese_font}")
 
-available_fonts = [f.name for f in fm.fontManager.ttflist]
-
-# 跨平台中文字体列表（优先级从高到低）
-chinese_fonts = [
-    # Windows 常用
-    "SimHei", "Microsoft YaHei", "Microsoft YaHei UI",
-    "SimSun", "FangSong", "KaiTi", "SimKai",
-    # Linux
-    "WenQuanYi Micro Hei", "WenQuanYi Zen Hei", "Noto Sans CJK SC",
-    "Source Han Sans SC", "Droid Sans Fallback", "AR PL UMing CN",
-    # macOS
-    "PingFang SC", "STHeiti", "Heiti SC",
-    # 通用
-    "Arial Unicode MS", "DejaVu Sans"
-]
-
-# 找到第一个可用的中文字体
-chinese_font = None
-for font in chinese_fonts:
-    if font in available_fonts:
-        chinese_font = font
-        break
-
-if not chinese_font:
-    chinese_font = "sans-serif"
-
-plt.rcParams["font.sans-serif"] = [chinese_font, "sans-serif"]
-plt.rcParams["font.family"] = chinese_font if chinese_font != "sans-serif" else "sans-serif"
+plt.rcParams["font.sans-serif"] = [chinese_font]
 plt.rcParams["axes.unicode_minus"] = False
-
-# 调试信息
-print(f"[HydroTune-AI] 使用字体: {chinese_font}")
 
 # ============================================================
 # 页面状态初始化
