@@ -10,7 +10,10 @@ from glob import glob
 from typing import List, Dict
 
 sys.path.insert(0, os.path.dirname(__file__))
-from xgb_error_correction.config import DATA_DIR, COL_MAPPING, WARMUP_STEPS
+try:
+    from xgb_error_correction.config import DATA_DIR, COL_MAPPING, WARMUP_STEPS
+except ModuleNotFoundError:
+    from config import DATA_DIR, COL_MAPPING, WARMUP_STEPS
 
 
 def load_events() -> List[Dict]:

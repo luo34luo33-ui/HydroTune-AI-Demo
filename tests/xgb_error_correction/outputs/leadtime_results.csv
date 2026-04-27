@@ -1,0 +1,2 @@
+model,hydro_model,leadtime,strategy,k,calib_ratio,seed,calib_events,calib_nse_raw,non_calib_nse_raw,all_nse_raw,calib_nse_corrected,non_calib_nse_corrected,all_nse_corrected,calib_delta_nse,non_calib_delta_nse,all_delta_nse,time_seconds,run_id
+xgb,xaj,1,oracle,-1,5,0,"20100806,20100923,20230820,20240621,20140428",0.6298153580451575,0.5147754057023546,0.5243620683975883,0.9495485774864882,0.9720278973402195,0.9701546206857421,0.3197332194413307,0.457252491637865,0.44579255228815384,46.6224308013916,1

@@ -1,16 +1,49 @@
 # -*- coding: utf-8 -*-
 """
 Tank水箱模型适配器
-接入 src/hydro/ 核心计算模块
+使用 tests/models/tank.py 中的纯 NumPy 实现（高性能版本）
 """
+import os
+import sys
+import importlib.util
 from typing import Dict, Tuple, Optional
 import numpy as np
 
 from .base_model import BaseModel
-try:
-    from tank_model_structured.src import tank_discharge, MODEL_PARAMS, TANK_PARAMETER_ORDER
-except ImportError:
-    from src.hydro import tank_discharge, MODEL_PARAMS, TANK_PARAMETER_ORDER
+
+# 尝试导入 tests 中的纯 NumPy 版本
+TANK_NUMPY_AVAILABLE = False
+run_tank_model = None
+TANK_PARAM_BOUNDS = None
+TANK_PARAM_ORDER = None
+
+def _import_tank_numpy():
+    global TANK_NUMPY_AVAILABLE, run_tank_model, TANK_PARAM_BOUNDS, TANK_PARAM_ORDER
+    
+    possible_paths = [
+        os.path.join(os.getcwd(), "tests", "models", "tank.py"),
+        os.path.join(os.path.dirname(__file__), "..", "..", "tests", "models", "tank.py"),
+    ]
+    
+    for path in possible_paths:
+        if os.path.exists(path):
+            try:
+                spec = importlib.util.spec_from_file_location("tank_numpy", path)
+                if spec and spec.loader:
+                    tank_module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(tank_module)
+                    run_tank_model = tank_module.run_tank_model
+                    TANK_PARAM_BOUNDS = tank_module.TANK_PARAM_BOUNDS
+                    TANK_PARAM_ORDER = tank_module.TANK_PARAM_ORDER
+                    TANK_NUMPY_AVAILABLE = True
+                    print("[INFO] Tank NumPy版本加载成功")
+                    return
+            except Exception as e:
+                print(f"[WARN] Tank NumPy版本导入失败: {e}")
+    
+    TANK_NUMPY_AVAILABLE = False
+
+_import_tank_numpy()
 
 
 class TankModel(BaseModel):
@@ -25,8 +58,6 @@ class TankModel(BaseModel):
     - 适用于湿润地区流域模拟
     """
 
-    TANK_PARAMS = TANK_PARAMETER_ORDER
-
     @property
     def name(self) -> str:
         return "tank水箱模型"
@@ -36,111 +67,52 @@ class TankModel(BaseModel):
         return "lumped"
 
     @property
+    def supports_hourly(self) -> bool:
+        return True
+
+    @property
     def param_bounds(self) -> Dict[str, Tuple[float, float]]:
+        if TANK_PARAM_BOUNDS is not None:
+            return TANK_PARAM_BOUNDS
         return {
-            name: (info['min'], info['max'])
-            for name, info in MODEL_PARAMS.items()
-            if name in self.TANK_PARAMS
+            't0_is': (0.0, 50.0),
+            't0_boc': (0.15, 0.5),
+            't0_soc_uo': (0.2, 0.6),
+            't0_soc_lo': (0.15, 0.5),
+            't0_soh_uo': (50.0, 120.0),
+            't0_soh_lo': (10.0, 50.0),
+            't1_is': (0.0, 50.0),
+            't1_boc': (0.1, 0.4),
+            't1_soc': (0.1, 0.4),
+            't1_soh': (20.0, 80.0),
+            't2_is': (0.0, 50.0),
+            't2_boc': (0.05, 0.3),
+            't2_soc': (0.05, 0.3),
+            't2_soh': (10.0, 60.0),
+            't3_is': (0.0, 50.0),
+            't3_soc': (0.001, 0.05),
         }
 
     @property
     def default_params(self) -> Dict[str, float]:
-        return {p: MODEL_PARAMS[p]['default'] for p in self.TANK_PARAMS}
-
-    def run(
-        self,
-        precip: np.ndarray,
-        evap: np.ndarray,
-        params: Dict[str, float],
-        spatial_data: Optional[Dict] = None,
-        temperature: Optional[np.ndarray] = None,
-        warmup_steps: int = 0,
-    ) -> np.ndarray:
-        """
-        运行Tank水箱模型
-        
-        参数
-        ----------
-        precip : np.ndarray
-            降水序列 (mm), shape: (n_timesteps,)
-        evap : np.ndarray
-            蒸发序列 (mm), shape: (n_timesteps,)
-        params : Dict[str, float]
-            模型参数字典
-        spatial_data : Dict, optional
-            空间数据，默认 {'area': 150.7944, 'del_t': 24.0}
-            - area: 流域面积 (km²)
-            - del_t: 时间步长 (小时)
-            - timestep: 'hourly' 或 'daily'
-        temperature : np.ndarray, optional
-            温度序列 (°C)，Tank模型不使用此参数
-        warmup_steps : int
-            预热期步数
-        
-        返回
-        -------
-        np.ndarray
-            模拟流量序列 (m³/s), shape: (n_timesteps,)
-        """
-        use_simple = False
-        if spatial_data is not None:
-            use_simple = spatial_data.get('use_simple_impl', False)
-        
-        if use_simple:
-            from src.hydro import tank_simple
-            if spatial_data is None:
-                spatial_data = {'area': 150.7944, 'del_t': 24.0}
-            area = spatial_data.get('area', 150.7944)
-            del_t = spatial_data.get('del_t', 24.0)
-            return tank_simple.run_tank_model(precip, evap, params, area, del_t)
-        
-        if spatial_data is None:
-            spatial_data = {'area': 150.7944, 'del_t': 24.0}
-        
-        area = spatial_data.get('area')
-        if area is None:
-            raise ValueError("spatial_data 必须包含 'area' 参数（流域面积，单位km²）")
-        
-        if 'del_t' in spatial_data:
-            del_t = spatial_data['del_t']
-        else:
-            timestep = spatial_data.get('timestep', 'daily')
-            del_t = 1.0 if timestep == 'hourly' else 24.0
-        
-        full_params = self.default_params.copy()
-        full_params.update(params)
-        
-        if del_t == 1.0:
-            precip_input = precip * 24.0
-            evap_input = evap * 24.0
-        else:
-            precip_input = precip
-            evap_input = evap
-        
-        discharge, _ = tank_discharge(
-            precipitation=precip_input,
-            evapotranspiration=evap_input,
-            del_t=del_t,
-            area=area,
-            t0_is=full_params['t0_is'],
-            t0_boc=full_params['t0_boc'],
-            t0_soc_uo=full_params['t0_soc_uo'],
-            t0_soc_lo=full_params['t0_soc_lo'],
-            t0_soh_uo=full_params['t0_soh_uo'],
-            t0_soh_lo=full_params['t0_soh_lo'],
-            t1_is=full_params['t1_is'],
-            t1_boc=full_params['t1_boc'],
-            t1_soc=full_params['t1_soc'],
-            t1_soh=full_params['t1_soh'],
-            t2_is=full_params['t2_is'],
-            t2_boc=full_params['t2_boc'],
-            t2_soc=full_params['t2_soc'],
-            t2_soh=full_params['t2_soh'],
-            t3_is=full_params['t3_is'],
-            t3_soc=full_params['t3_soc'],
-        )
-        
-        return discharge
+        return {
+            't0_is': 10.0,
+            't0_boc': 0.3,
+            't0_soc_uo': 0.4,
+            't0_soc_lo': 0.3,
+            't0_soh_uo': 80.0,
+            't0_soh_lo': 30.0,
+            't1_is': 10.0,
+            't1_boc': 0.25,
+            't1_soc': 0.25,
+            't1_soh': 50.0,
+            't2_is': 10.0,
+            't2_boc': 0.15,
+            't2_soc': 0.15,
+            't2_soh': 35.0,
+            't3_is': 10.0,
+            't3_soc': 0.02,
+        }
 
     def get_param_descriptions(self) -> Dict[str, str]:
         return {
@@ -161,3 +133,101 @@ class TankModel(BaseModel):
             't3_is': 'Tank-3 初始蓄水量 (mm，基流)',
             't3_soc': 'Tank-3 侧孔出流系数（基流）',
         }
+
+    def get_required_spatial_data(self) -> list:
+        return ['area']
+
+    def get_timestep_hours(self, spatial_data: Optional[Dict] = None):
+        if spatial_data is None:
+            return 24
+        timestep = spatial_data.get('timestep', 'daily')
+        return 1 if timestep == 'hourly' else 24
+
+    def run(
+        self,
+        precip: np.ndarray,
+        evap: np.ndarray,
+        params: Dict[str, float],
+        spatial_data: Optional[Dict] = None,
+        temperature: Optional[np.ndarray] = None,
+        warmup_steps: int = 0,
+    ) -> np.ndarray:
+        """
+        运行Tank水箱模型（纯NumPy版本，高性能）
+        
+        参数
+        ----------
+        precip : np.ndarray
+            降水序列 (mm), shape: (n_timesteps,)
+        evap : np.ndarray
+            蒸发序列 (mm), shape: (n_timesteps,)
+        params : Dict[str, float]
+            模型参数字典
+        spatial_data : Dict, optional
+            空间数据，默认 {'area': 150.7944, 'del_t': 24.0}
+        temperature : np.ndarray, optional
+            温度序列，Tank模型不使用此参数
+        warmup_steps : int
+            预热期步数
+        
+        返回
+        -------
+        np.ndarray
+            模拟流量序列 (m³/s), shape: (n_timesteps,)
+        """
+        global run_tank_model, TANK_NUMPY_AVAILABLE
+        
+        if not TANK_NUMPY_AVAILABLE:
+            _import_tank_numpy()
+        
+        if not TANK_NUMPY_AVAILABLE or run_tank_model is None:
+            raise RuntimeError("Tank NumPy 模型不可用")
+        
+        if spatial_data is None:
+            spatial_data = {'area': 150.7944, 'del_t': 24.0}
+        
+        area = spatial_data.get('area', 150.7944)
+        
+        if 'del_t' in spatial_data:
+            del_t = spatial_data['del_t']
+        else:
+            timestep = spatial_data.get('timestep', 'daily')
+            del_t = 1.0 if timestep == 'hourly' else 24.0
+        
+        full_params = self.default_params.copy()
+        full_params.update(params)
+        
+        if del_t == 1.0:
+            precip_input = precip * 24.0
+            evap_input = evap * 24.0
+        else:
+            precip_input = precip
+            evap_input = evap
+        
+        try:
+            flow = run_tank_model(
+                precip=precip_input,
+                evap=evap_input,
+                params=full_params,
+                area=area,
+                del_t=del_t,
+            )
+            
+            flow = np.nan_to_num(flow, nan=0.0, posinf=0.0, neginf=0.0)
+            flow = np.maximum(flow, 0)
+            
+            return flow
+            
+        except Exception as e:
+            print(f"[ERROR] Tank NumPy 模型运行失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return np.zeros(len(precip))
+
+    def validate_params(self, params: Dict[str, float]) -> bool:
+        for name, value in params.items():
+            if name in self.param_bounds:
+                min_val, max_val = self.param_bounds[name]
+                if not (min_val <= value <= max_val):
+                    return False
+        return True

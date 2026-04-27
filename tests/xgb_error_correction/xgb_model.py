@@ -29,7 +29,7 @@ def build_features(precip: np.ndarray, error: np.ndarray) -> np.ndarray:
     features = []
     for i in range(max_lag, n):
         row = []
-        for lag in range(N_ERROR_LAGS):
+        for lag in range(1, N_ERROR_LAGS + 1):
             row.append(error[i - lag])
         for lag in range(1, N_PRECIP_LAGS + 1):
             row.append(precip[i - lag])

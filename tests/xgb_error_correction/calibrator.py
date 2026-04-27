@@ -7,8 +7,9 @@ import sys
 import numpy as np
 from typing import Dict, List, Tuple
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))  # HydroTune-AI-Demo
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'tests'))  # tests
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'tests', 'models'))  # tests/models
 
 from algos.sce import optimize_sce
 from xgb_error_correction.data_loader import calc_nse
@@ -55,20 +56,35 @@ def musk(u: np.ndarray, k: float, x: float, dt: float = 1.0) -> np.ndarray:
 
 def run_tank_model(precip: np.ndarray, evap: np.ndarray, params: Dict, area: float, del_t: float = 1.0) -> np.ndarray:
     """运行Tank模型"""
-    from models.tank import run_tank_model as _run
-    return _run(precip, evap, params, area, del_t)
+    import importlib.util
+    root_dir = os.path.dirname(os.path.dirname(__file__))
+    models_dir = os.path.join(root_dir, 'models')
+    spec = importlib.util.spec_from_file_location("tank", os.path.join(models_dir, "tank.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.run_tank_model(precip, evap, params, area, del_t)
 
 
 def run_hbv_model(precip: np.ndarray, evap: np.ndarray, params: Dict, area: float) -> np.ndarray:
     """运行HBV模型"""
-    from models.hbv import run_hbv_model as _run
-    return _run(precip, evap, params, area)
+    import importlib.util
+    root_dir = os.path.dirname(os.path.dirname(__file__))
+    models_dir = os.path.join(root_dir, 'models')
+    spec = importlib.util.spec_from_file_location("hbv", os.path.join(models_dir, "hbv.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.run_hbv_model(precip, evap, params, area)
 
 
 def run_xaj_model(precip: np.ndarray, evap: np.ndarray, params: Dict, area: float) -> np.ndarray:
     """运行XAJ模型"""
-    from models.xaj import run_xaj_model as _run
-    return _run(precip, evap, params, area)
+    import importlib.util
+    root_dir = os.path.dirname(os.path.dirname(__file__))
+    models_dir = os.path.join(root_dir, 'models')
+    spec = importlib.util.spec_from_file_location("xaj", os.path.join(models_dir, "xaj.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.run_xaj_model(precip, evap, params, area)
 
 
 class Calibrator:
