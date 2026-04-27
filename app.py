@@ -49,37 +49,61 @@ st.set_page_config(
 )
 
 # 设置中文字体（兼容本地和云端）
+import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 import platform
+import os
+
 available_fonts = [f.name for f in fm.fontManager.ttflist]
 
-# 跨平台中文字体列表
+# Windows 尝试从系统字体目录加载
+if platform.system() == "Windows":
+    font_paths = [
+        r"C:\Windows\Fonts",
+        r"C:\Windows\Fonts\simhei.ttf",
+        r"C:\Windows\Fonts\msyh.ttc",
+        r"C:\Windows\Fonts\simkai.ttf",
+        r"C:\Windows\Fonts\simsun.ttc",
+    ]
+    for fp in font_paths:
+        if os.path.exists(fp):
+            try:
+                fm.fontManager.addfont(fp)
+            except:
+                pass
+
+available_fonts = [f.name for f in fm.fontManager.ttflist]
+
+# 跨平台中文字体列表（优先级从高到低）
 chinese_fonts = [
-    # Linux
-    "WenQuanYi Micro Hei", "WenQuanYi Zen Hei", "Noto Sans CJK SC",
-    "Source Han Sans SC", "Droid Sans Fallback", "AR PL UMing CN",
     # Windows 常用
     "SimHei", "Microsoft YaHei", "Microsoft YaHei UI",
     "SimSun", "FangSong", "KaiTi", "SimKai",
+    # Linux
+    "WenQuanYi Micro Hei", "WenQuanYi Zen Hei", "Noto Sans CJK SC",
+    "Source Han Sans SC", "Droid Sans Fallback", "AR PL UMing CN",
     # macOS
     "PingFang SC", "STHeiti", "Heiti SC",
     # 通用
     "Arial Unicode MS", "DejaVu Sans"
 ]
-font_list = [f for f in chinese_fonts if f in available_fonts]
 
-# Windows 系统特殊处理
-if platform.system() == "Windows":
-    windows_fonts = ["SimHei", "Microsoft YaHei", "Microsoft YaHei UI", 
-                     "SimSun", "FangSong", "KaiTi"]
-    for f in windows_fonts:
-        if f in available_fonts and f not in font_list:
-            font_list.append(f)
+# 找到第一个可用的中文字体
+chinese_font = None
+for font in chinese_fonts:
+    if font in available_fonts:
+        chinese_font = font
+        break
 
-if not font_list:
-    font_list = ["sans-serif"]
-plt.rcParams["font.sans-serif"] = font_list
+if not chinese_font:
+    chinese_font = "sans-serif"
+
+plt.rcParams["font.sans-serif"] = [chinese_font, "sans-serif"]
+plt.rcParams["font.family"] = chinese_font if chinese_font != "sans-serif" else "sans-serif"
 plt.rcParams["axes.unicode_minus"] = False
+
+# 调试信息
+print(f"[HydroTune-AI] 使用字体: {chinese_font}")
 
 # ============================================================
 # 页面状态初始化
