@@ -50,11 +50,32 @@ st.set_page_config(
 
 # 设置中文字体（兼容本地和云端）
 import matplotlib.font_manager as fm
+import platform
 available_fonts = [f.name for f in fm.fontManager.ttflist]
-chinese_fonts = ["WenQuanYi Micro Hei", "WenQuanYi Zen Hei", "Noto Sans CJK SC", 
-                 "Source Han Sans SC", "Droid Sans Fallback", "AR PL UMing CN",
-                 "SimHei", "Microsoft YaHei", "Arial Unicode MS"]
+
+# 跨平台中文字体列表
+chinese_fonts = [
+    # Linux
+    "WenQuanYi Micro Hei", "WenQuanYi Zen Hei", "Noto Sans CJK SC",
+    "Source Han Sans SC", "Droid Sans Fallback", "AR PL UMing CN",
+    # Windows 常用
+    "SimHei", "Microsoft YaHei", "Microsoft YaHei UI",
+    "SimSun", "FangSong", "KaiTi", "SimKai",
+    # macOS
+    "PingFang SC", "STHeiti", "Heiti SC",
+    # 通用
+    "Arial Unicode MS", "DejaVu Sans"
+]
 font_list = [f for f in chinese_fonts if f in available_fonts]
+
+# Windows 系统特殊处理
+if platform.system() == "Windows":
+    windows_fonts = ["SimHei", "Microsoft YaHei", "Microsoft YaHei UI", 
+                     "SimSun", "FangSong", "KaiTi"]
+    for f in windows_fonts:
+        if f in available_fonts and f not in font_list:
+            font_list.append(f)
+
 if not font_list:
     font_list = ["sans-serif"]
 plt.rcParams["font.sans-serif"] = font_list
