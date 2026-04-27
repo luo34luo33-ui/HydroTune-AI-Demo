@@ -549,27 +549,8 @@ def generate_multifile_report(
             for k, v in list(params.items())[:8]:
                 llm_prompt += f"- {k}: {v:.4f}\n"
         
-        if xgb_correction_results:
-            llm_prompt += """
-## 5. XGBoost误差校正结果
-| 洪水场次 | 校正前NSE | 校正后NSE | NSE提升 |
-|----------|----------|----------|--------|
-"""
-            for r in xgb_correction_results:
-                llm_prompt += f"| {r['file_name']} | {r['nse_before']:.4f} | {r['nse_after']:.4f} | {r['nse_improvement']:+.4f} |\n"
-            
-            avg_before = np.mean([r['nse_before'] for r in xgb_correction_results])
-            avg_after = np.mean([r['nse_after'] for r in xgb_correction_results])
-            avg_improvement = np.mean([r['nse_improvement'] for r in xgb_correction_results])
-            llm_prompt += f"""
-**汇总**: 
-- 平均校正前NSE: {avg_before:.4f}
-- 平均校正后NSE: {avg_after:.4f}
-- 平均NSE提升: {avg_improvement:+.4f}
-"""
-        
         llm_prompt += """
-## 6. 分析要求
+## 5. 分析要求
 请从以下角度撰写报告（控制在800字以内）：
 
 1. **模型泛化能力评估**: 对比率定期和验证期的NSE，判断模型是否过拟合
@@ -605,29 +586,6 @@ def generate_multifile_report(
                 else:
                     report_lines.append("- ✓ 率定和验证表现一致，模型稳定")
                 report_lines.append("")
-        
-        if xgb_correction_results:
-            report_lines.extend([
-                "## 5. XGBoost误差校正结果",
-                "",
-            ])
-            for r in xgb_correction_results:
-                report_lines.append(f"**{r['file_name']}**:")
-                report_lines.append(f"- 校正前NSE: {r['nse_before']:.4f}")
-                report_lines.append(f"- 校正后NSE: {r['nse_after']:.4f}")
-                report_lines.append(f"- NSE提升: {r['nse_improvement']:+.4f}")
-                report_lines.append("")
-            
-            avg_before = np.mean([r['nse_before'] for r in xgb_correction_results])
-            avg_after = np.mean([r['nse_after'] for r in xgb_correction_results])
-            avg_improvement = np.mean([r['nse_improvement'] for r in xgb_correction_results])
-            report_lines.extend([
-                "**汇总**:",
-                f"- 平均校正前NSE: {avg_before:.4f}",
-                f"- 平均校正后NSE: {avg_after:.4f}",
-                f"- 平均NSE提升: {avg_improvement:+.4f}",
-                "",
-            ])
     
     report_lines.extend([
         "---",
