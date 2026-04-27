@@ -1,2 +1,0 @@
-# Tank model dependencies
-numpy>=1.20.0

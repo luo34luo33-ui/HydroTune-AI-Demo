@@ -20,14 +20,6 @@ try:
 except ImportError as e:
     print(f"[HydroTune-AI] HBV模型注册失败: {e}")
 
-# 注册新安江模型
-try:
-    from .model_xaj import XAJModel
-    ModelRegistry.register(XAJModel())
-    print("[HydroTune-AI] 新安江模型已注册")
-except ImportError as e:
-    print(f"[HydroTune-AI] 新安江模型注册失败: {e}")
-
 # 注册新安江模型V2
 try:
     from .model_xaj_v2 import XAJModelV2

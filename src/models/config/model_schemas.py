@@ -160,7 +160,7 @@ def _register_all_schemas():
         param_defaults=XAJ_DEFAULT_PARAMS,
         param_descriptions=_get_xaj_descriptions(),
         param_units=_get_xaj_units(),
-        module_path='XAJ-model-structured',
+        module_path=None,
         core_function='run_new_xaj',
         loader_config={'area_required': True}
     ))
