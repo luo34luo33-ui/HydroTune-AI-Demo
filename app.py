@@ -24,6 +24,9 @@ from src.data_preanalysis import (
     DataPreAnalyzer, PreAnalysisResult, FloodEvent as PAFloodEvent,
     DataQualityResult, FrequencyAnalysisResult
 )
+from src.flood_semantic_encoder import FloodSemanticCode, FloodSemanticEncoder
+from src.llm_preanalyzer import SemanticPreAnalyzer, DataQualityMetrics
+from src.date_parser import parse_dates, infer_timestep as infer_timestep_from_dates
 from src.llm_reporter import (
     generate_preanalysis_report, generate_calibration_report,
     generate_comprehensive_report, generate_multifile_report
@@ -1168,8 +1171,8 @@ if uploaded_files and len(uploaded_files) > 0:
                 label_visibility="collapsed"
             )
         
-        # ============================================================
-        # 🤖 AI Agent 数据预分析
+# ============================================================
+        # 🤖 AI Agent 数据预分析（基于语义编码+LLM）
         # ============================================================
         st.divider()
         st.subheader("🧠 AI Agent 数据预分析")
@@ -1178,359 +1181,87 @@ if uploaded_files and len(uploaded_files) > 0:
         all_evap_arr = np.array(all_evap)
         all_flow_arr = np.array(all_flow)
         
-        # 为预分析准备日期（灵活解析）
-        try:
-            dates_for_analysis = pd.to_datetime(first_clean_df['date'], format='mixed')
-        except:
-            dates_for_analysis = pd.to_datetime(first_clean_df['date'], errors='coerce')
-        if dates_for_analysis is None or dates_for_analysis.isna().all():
-            dates_for_analysis = pd.date_range(start='2020-01-01', periods=len(all_precip), freq='D')
-        elif len(dates_for_analysis) < len(all_precip):
+        dates_for_analysis = parse_dates(first_clean_df['date'])
+        
+        if len(dates_for_analysis) < len(all_precip):
             dates_for_analysis = pd.date_range(
                 start=dates_for_analysis.iloc[0] if not pd.isna(dates_for_analysis.iloc[0]) else '2020-01-01',
                 periods=len(all_precip),
                 freq='h' if user_timestep == 'hourly' else 'D'
             )
         
-        # 确保dates_for_analysis是有效的Series
-        if len(dates_for_analysis) == 0:
-            dates_for_analysis = pd.Series(pd.date_range(start='2020-01-01', periods=len(all_precip_arr)))
-        
         dates_series = pd.Series(dates_for_analysis).reset_index(drop=True)
         
-        preanalyzer = DataPreAnalyzer(area=catchment_area)
-        preanalyzer.timestep = user_timestep
-        quality = preanalyzer.evaluate_quality(all_precip_arr, all_flow_arr, dates_series)
+        detected_timestep = infer_timestep_from_dates(dates_series)
         
-        # ============================================================
-        # 根据上传模式进行不同的预分析
-        # ============================================================
+        preanalyzer = SemanticPreAnalyzer(area=catchment_area, timestep=user_timestep)
         
-        if upload_mode == "单文件（一场洪水）":
-            # 模式1：整场洪水分析（不识别子场次）
-            if len(all_flow_arr) == 0:
-                st.error("⚠️ 流量数据为空，请检查上传的数据文件")
-                st.stop()
-            peak_idx = np.argmax(all_flow_arr)
-            peak_flow = all_flow_arr[peak_idx]
-            baseflow = np.percentile(all_flow_arr, 10)
-            
-            rise_start = max(0, peak_idx - 20)
-            rise_flows = all_flow_arr[rise_start:peak_idx+1] if peak_idx > 0 else np.array([peak_flow])
-            rise_rate = (peak_flow - rise_flows[0]) / len(rise_flows) if len(rise_flows) > 1 else 0
-            
-            fall_end = min(len(all_flow_arr), peak_idx + 30)
-            fall_flows = all_flow_arr[peak_idx:fall_end]
-            recession_rate = (fall_flows[0] - fall_flows[-1]) / len(fall_flows) if len(fall_flows) > 1 else 0
-            
-            if rise_rate > 0 and recession_rate > 0:
-                peak_ratio = rise_rate / recession_rate if recession_rate > 0 else 10
-                if peak_ratio > 2:
-                    peak_type = "陡涨陡落型"
-                elif peak_ratio > 0.8:
-                    peak_type = "均匀对称型"
-                else:
-                    peak_type = "缓涨缓落型"
-            elif rise_rate > recession_rate:
-                peak_type = "陡涨缓落型"
-            else:
-                peak_type = "缓涨陡落型"
-            
-            flood_volume = np.sum(all_flow_arr - baseflow) * (24 if user_timestep == 'daily' else 1) / 10000
-            
-            preanalysis_result = type('obj', (object,), {
-                'quality': quality,
-                'events': [type('obj', (object,), {
-                    'event_id': 'F001',
-                    'peak_flow': peak_flow,
-                    'flood_volume': flood_volume,
-                    'rise_rate': rise_rate,
-                    'recession_rate': recession_rate,
-                    'peak_type': peak_type,
-                    'start_idx': 0,
-                    'end_idx': len(all_flow_arr) - 1,
-                    'start_date': dates_series.iloc[0] if len(dates_series) > 0 else pd.Timestamp.now(),
-                    'end_date': dates_series.iloc[-1] if len(dates_series) > 0 else pd.Timestamp.now(),
-                    'duration': len(all_flow_arr)
-                })()],
-                'selected_events': [],
-                'frequency': type('obj', (object,), {
-                    'n_samples': 1,
-                    'mean': peak_flow,
-                    'std': 0,
-                    'cv': 0,
-                    'cs': 0,
-                    'design_values': {}
-                })(),
-                'area': catchment_area,
-                'timestep': user_timestep
-            })()
-            
-            st.success(f"✅ AI Agent 完成数据分析：整场洪水，峰型{peak_type}")
-            
-            with st.expander("📈 数据分析详情", expanded=True):
-                col1, col2, col3, col4 = st.columns(4)
-                col1.metric("数据完整率", f"{quality.completeness:.1f}%")
-                col2.metric("时间连续性", f"{quality.continuity:.1f}%")
-                col3.metric("降水-径流相关", f"{quality.correlation:.3f}")
-                col4.metric("质量等级", quality.quality_level)
-                
-                st.divider()
-                
-                col1, col2, col3 = st.columns(3)
-                col1.metric("洪峰流量", f"{peak_flow:.1f} m³/s")
-                col2.metric("洪水总量", f"{flood_volume:.1f} mm")
-                col3.metric("峰型", peak_type)
-                
-                col1, col2, col3 = st.columns(3)
-                col1.metric("涨洪速率", f"{rise_rate:.3f}")
-                col2.metric("落洪速率", f"{recession_rate:.3f}")
-                col3.metric("基流", f"{baseflow:.1f} m³/s")
+        is_multi_file_mode = upload_mode == "多文件（每文件一场洪水）"
         
-        elif upload_mode == "单文件（连续序列）":
-            # 模式2：连续序列识别多场洪水（基于斜率变化）
-            with st.spinner("🤖 AI Agent 正在进行洪水事件识别..."):
-                detected_events = preanalyzer.detect_flood_events_by_slope(
-                    all_flow_arr, 
-                    dates_series,
-                    precip_threshold=float(np.mean(all_precip_arr) * 2),
-                    flow_threshold=float(np.percentile(all_flow_arr, 70))
-                )
-                
-                if not detected_events:
-                    st.warning("⚠️ 未识别到洪水场次，使用默认参数重新识别...")
-                    detected_events = preanalyzer.detect_flood_events_by_slope(
-                        all_flow_arr,
-                        dates_series,
-                        precip_threshold=0.5,
-                        flow_threshold=float(np.percentile(all_flow_arr, 60))
-                    )
-            
-            if detected_events:
-                st.success(f"✅ AI Agent 完成洪水识别：共识别 {len(detected_events)} 场洪水")
-                
-                # 计算频率分析
-                from scipy import stats
-                peaks = np.array([e['peak_flow'] for e in detected_events])
-                if len(peaks) >= 3:
-                    freq_result = preanalyzer.frequency_analysis_pearson(peaks)
-                else:
-                    freq_result = type('obj', (object,), {
-                        'n_samples': len(peaks),
-                        'mean': np.mean(peaks) if len(peaks) > 0 else 0,
-                        'std': np.std(peaks) if len(peaks) > 0 else 0,
-                        'cv': np.std(peaks)/np.mean(peaks) if np.mean(peaks) > 0 else 0,
-                        'cs': 0,
-                        'design_values': {}
-                    })()
-                
-                # 选取代表性洪水（取峰值最大的3-5场）
-                n_select = min(5, max(3, len(detected_events) // 2))
-                selected = sorted(detected_events, key=lambda x: x['peak_flow'], reverse=True)[:n_select]
-                selected_events = []
-                for i, evt in enumerate(selected):
-                    evt_obj = type('obj', (object,), {
-                        'event_id': f'F{i+1:03d}',
-                        'peak_flow': evt['peak_flow'],
-                        'flood_volume': evt.get('flood_volume', 0),
-                        'rise_rate': evt.get('rise_rate', 0),
-                        'recession_rate': evt.get('recession_rate', 0),
-                        'peak_type': evt.get('peak_type', '未知'),
-                        'start_idx': evt['start_idx'],
-                        'end_idx': evt['end_idx'],
-                        'start_date': evt['start_date'],
-                        'end_date': evt['end_date'],
-                        'duration': evt['end_idx'] - evt['start_idx'],
-                        'selection_reason': f'洪峰流量第{i+1}高: {evt["peak_flow"]:.1f} m³/s'
-                    })()
-                    selected_events.append(evt_obj)
-                
-                # 构建事件列表
-                events = []
-                for i, evt in enumerate(detected_events):
-                    evt_obj = type('obj', (object,), {
-                        'event_id': f'F{i+1:03d}',
-                        'peak_flow': evt['peak_flow'],
-                        'flood_volume': evt.get('flood_volume', 0),
-                        'rise_rate': evt.get('rise_rate', 0),
-                        'recession_rate': evt.get('recession_rate', 0),
-                        'peak_type': evt.get('peak_type', '未知'),
-                        'start_idx': evt['start_idx'],
-                        'end_idx': evt['end_idx'],
-                        'start_date': evt['start_date'],
-                        'end_date': evt['end_date'],
-                        'duration': evt['end_idx'] - evt['start_idx']
-                    })()
-                    events.append(evt_obj)
-                
-                preanalysis_result = type('obj', (object,), {
-                    'quality': quality,
-                    'events': events,
-                    'selected_events': selected_events,
-                    'frequency': freq_result,
-                    'area': catchment_area,
-                    'timestep': user_timestep
-                })()
-                
-                # 显示分析详情
-                with st.expander("📈 洪水识别与频率分析详情", expanded=True):
-                    col1, col2, col3, col4 = st.columns(4)
-                    col1.metric("数据完整率", f"{quality.completeness:.1f}%")
-                    col2.metric("时间连续性", f"{quality.continuity:.1f}%")
-                    col3.metric("降水-径流相关", f"{quality.correlation:.3f}")
-                    col4.metric("质量等级", quality.quality_level)
-                    
-                    st.divider()
-                    
-                    col1, col2 = st.columns([1, 1])
-                    with col1:
-                        st.write("**🤖 AI 识别洪水场次**:")
-                        events_data = []
-                        for e in preanalysis_result.events:
-                            start_str = e.start_date.strftime('%Y-%m-%d') if hasattr(e.start_date, 'strftime') else str(e.start_date)[:10]
-                            end_str = e.end_date.strftime('%Y-%m-%d') if hasattr(e.end_date, 'strftime') else str(e.end_date)[:10]
-                            events_data.append({
-                                '场次': e.event_id,
-                                '开始': start_str,
-                                '结束': end_str,
-                                '峰值(m³/s)': f"{e.peak_flow:.1f}",
-                                '历时': e.duration
-                            })
-                        if events_data:
-                            st.dataframe(pd.DataFrame(events_data), use_container_width=True, hide_index=True)
-                    
-                    with col2:
-                        st.write("**代表性洪水选取**:")
-                        selected_data = []
-                        for e in preanalysis_result.selected_events:
-                            selected_data.append({
-                                '场次': e.event_id,
-                                '峰值(m³/s)': f"{e.peak_flow:.1f}",
-                                '选取原因': e.selection_reason[:30] + '...' if len(e.selection_reason) > 30 else e.selection_reason
-                            })
-                        if selected_data:
-                            st.dataframe(pd.DataFrame(selected_data), use_container_width=True, hide_index=True)
-                    
-                    st.divider()
-                    
-                    col1, col2 = st.columns([1, 1])
-                    with col1:
-                        st.write("**频率分析参数**:")
-                        freq = preanalysis_result.frequency
-                        st.write(f"- 样本数: {freq.n_samples} 场")
-                        st.write(f"- 均值: {freq.mean:.2f} m³/s")
-                        st.write(f"- Cv: {freq.cv:.3f}")
-                        st.write(f"- Cs: {freq.cs:.3f}")
-                        
-                        st.write("**设计洪水成果**:")
-                        for rp, val in freq.design_values.items():
-                            st.write(f"- {rp}: {val:.2f} m³/s")
-                    
-                    with col2:
-                        st.write("**洪水过程线**")
-                        fig, ax = plt.subplots(figsize=(10, 4), dpi=150)
-                        xlabel_text = "时间(天)" if user_timestep == 'daily' else "时间(h)"
-                        ax.plot(all_flow_arr, 'b-', linewidth=1, label='流量过程')
-                        ax.fill_between(range(len(all_flow_arr)), 0, all_flow_arr, alpha=0.3)
-                        
-                        # 标记识别的洪水
-                        cmap = plt.cm.get_cmap('tab10')
-                        for i, evt in enumerate(selected_events):
-                            color = cmap(i % 10)
-                            ax.axvspan(evt.start_idx, evt.end_idx, alpha=0.2, color=color, label=f"{evt.event_id}: {evt.peak_flow:.1f} $m^3/s$")
-                            ax.axvline(evt.start_idx, color=color, linestyle='--', alpha=0.5)
-                            ax.axvline(evt.end_idx, color=color, linestyle='--', alpha=0.5)
-                        
-                        ax.set_xlabel(xlabel_text, fontsize=12)
-                        ax.set_ylabel(r'流量 ($m^3/s$)', fontsize=12)
-                        ax.set_title('连续序列洪水识别结果', fontsize=14)
-                        ax.legend(fontsize=8, loc='upper right')
-                        ax.grid(True, alpha=0.3)
-                        st.pyplot(fig)
-            else:
-                st.warning("⚠️ 未能识别洪水场次，切换为单场洪水模式")
-                upload_mode = "单文件（一场洪水）"
-                st.rerun()
+        with st.spinner("🤖 AI正在分析洪水场次语义编码..."):
+            analysis_result = preanalyzer.analyze(
+                all_flow_arr, all_precip_arr, dates_series, call_minimax, 
+                multi_file_mode=is_multi_file_mode
+            )
         
-        else:
-            # 模式3：多文件模式，每文件一场洪水
-            if len(all_flow_arr) == 0:
-                st.warning("⚠️ 流量数据为空，无法进行分析")
-                st.stop()
-            peak_idx = np.argmax(all_flow_arr)
-            peak_flow = all_flow_arr[peak_idx]
-            baseflow = np.percentile(all_flow_arr, 10)
+        semantic_codes = analysis_result['semantic_codes']
+        quality_metrics = analysis_result['quality']
+        
+        st.success(f"✅ AI Agent 完成语义编码：共 {len(semantic_codes)} 场洪水")
+        
+        with st.expander("📈 洪水语义编码详情", expanded=True):
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("数据完整率", f"{quality_metrics.completeness:.1f}%")
+            col2.metric("时间连续性", f"{quality_metrics.continuity:.1f}%")
+            col3.metric("降水-径流相关", f"{quality_metrics.correlation:.3f}")
+            col4.metric("质量等级", quality_metrics.quality_level)
             
-            rise_start = max(0, peak_idx - 20)
-            rise_flows = all_flow_arr[rise_start:peak_idx+1] if peak_idx > 0 else np.array([peak_flow])
-            rise_rate = (peak_flow - rise_flows[0]) / len(rise_flows) if len(rise_flows) > 1 else 0
+            if quality_metrics.issues:
+                st.warning("数据问题: " + "; ".join(quality_metrics.issues))
             
-            fall_end = min(len(all_flow_arr), peak_idx + 30)
-            fall_flows = all_flow_arr[peak_idx:fall_end]
-            recession_rate = (fall_flows[0] - fall_flows[-1]) / len(fall_flows) if len(fall_flows) > 1 else 0
+            st.divider()
             
-            if rise_rate > 0 and recession_rate > 0:
-                peak_ratio = rise_rate / recession_rate if recession_rate > 0 else 10
-                if peak_ratio > 2:
-                    peak_type = "陡涨陡落型"
-                elif peak_ratio > 0.8:
-                    peak_type = "均匀对称型"
-                else:
-                    peak_type = "缓涨缓落型"
-            elif rise_rate > recession_rate:
-                peak_type = "陡涨缓落型"
-            else:
-                peak_type = "缓涨陡落型"
+            if semantic_codes:
+                st.markdown("### 洪水场次语义编码表")
+                codes_data = []
+                for code in semantic_codes:
+                    codes_data.append({
+                        '场次': code.event_id,
+                        '量级': code.magnitude,
+                        '峰值(m³/s)': f"{code.peak_flow:.1f}",
+                        '洪量(10⁴m³)': f"{code.flood_volume:.1f}",
+                        '历时': code.duration,
+                        '涨段': code.rise_type,
+                        '落段': code.recession_type,
+                        '峰型': code.peak_shape,
+                        '降水驱动': code.rainfall_driven,
+                        '代表分': f"{code.representative_score:.1f}"
+                    })
+                if codes_data:
+                    st.dataframe(pd.DataFrame(codes_data), use_container_width=True, hide_index=True)
+        
+        st.divider()
+        with st.expander("🤖 LLM智能分析报告", expanded=True):
+            if analysis_result['base64_plot']:
+                st.markdown("![洪水分析图](data:image/png;base64," + analysis_result['base64_plot'] + ")")
             
-            flood_volume = np.sum(all_flow_arr - baseflow) * (24 if user_timestep == 'daily' else 1) / 10000
-            
-            multi_events = []
-            for i in range(len(file_dfs)):
-                multi_events.append(type('obj', (object,), {
-                    'event_id': f'F{i+1:03d}',
-                    'peak_flow': peak_flow,
-                    'flood_volume': flood_volume,
-                    'rise_rate': rise_rate,
-                    'recession_rate': recession_rate,
-                    'peak_type': peak_type,
-                    'start_idx': 0,
-                    'end_idx': len(all_flow_arr) - 1,
-                    'start_date': dates_series.iloc[0] if len(dates_series) > 0 else pd.Timestamp.now(),
-                    'end_date': dates_series.iloc[-1] if len(dates_series) > 0 else pd.Timestamp.now(),
-                    'duration': len(all_flow_arr)
-                })())
-            
-            preanalysis_result = type('obj', (object,), {
-                'quality': quality,
-                'events': multi_events,
-                'selected_events': [],
-                'frequency': type('obj', (object,), {
-                    'n_samples': len(file_dfs),
-                    'mean': peak_flow,
-                    'std': 0,
-                    'cv': 0,
-                    'cs': 0,
-                    'design_values': {}
-                })(),
-                'area': catchment_area,
-                'timestep': user_timestep
-            })()
-            
-            st.success(f"✅ AI Agent 完成数据分析：{len(file_dfs)} 场洪水")
-            
-            with st.expander("📈 数据分析详情", expanded=True):
-                col1, col2, col3, col4 = st.columns(4)
-                col1.metric("数据完整率", f"{quality.completeness:.1f}%")
-                col2.metric("时间连续性", f"{quality.continuity:.1f}%")
-                col3.metric("降水-径流相关", f"{quality.correlation:.3f}")
-                col4.metric("质量等级", quality.quality_level)
-                
-                st.divider()
-                
-                col1, col2, col3 = st.columns(3)
-                col1.metric("文件数量", f"{len(file_dfs)} 个")
-                col2.metric("洪峰流量", f"{peak_flow:.1f} m³/s")
-                col3.metric("洪水总量", f"{flood_volume:.1f} mm")
+            st.markdown(analysis_result['llm_report'])
+        
+        preanalysis_result = type('obj', (object,), {
+            'quality': quality_metrics,
+            'events': semantic_codes,
+            'selected_events': semantic_codes[:5] if len(semantic_codes) >= 5 else semantic_codes,
+            'frequency': type('obj', (object,), {
+                'n_samples': len(semantic_codes),
+                'mean': np.mean([c.peak_flow for c in semantic_codes]) if semantic_codes else 0,
+                'std': np.std([c.peak_flow for c in semantic_codes]) if semantic_codes else 0,
+                'cv': np.std([c.peak_flow for c in semantic_codes]) / np.mean([c.peak_flow for c in semantic_codes]) if semantic_codes and np.mean([c.peak_flow for c in semantic_codes]) > 0 else 0,
+                'cs': 0,
+                'design_values': {}
+            })(),
+            'area': catchment_area,
+            'timestep': user_timestep
+        })()
         
         st.session_state['preanalysis_result'] = preanalysis_result
         
@@ -2301,28 +2032,40 @@ if uploaded_files and len(uploaded_files) > 0:
                     st.divider()
                     st.subheader("📊 模型表现对比")
                     
+                    model_names_for_comparison = ['HBV模型', '新安江模型2', 'tank水箱模型']
                     col1, col2, col3 = st.columns(3)
+                    
                     with col1:
-                        st.markdown("**率定场次平均**")
-                        calib_nse = np.mean([d['NSE'] for d in calib_data])
-                        calib_kge = np.mean([d['KGE'] for d in calib_data])
-                        calib_rmse = np.mean([d['RMSE'] for d in calib_data])
-                        calib_pbias = np.mean([d['PBIAS'] for d in calib_data])
-                        st.metric("NSE", f"{calib_nse:.4f}")
-                        st.metric("KGE", f"{calib_kge:.4f}")
-                        st.metric("RMSE", f"{calib_rmse:.4f}")
-                        st.metric("PBIAS", f"{calib_pbias:.2f}%")
+                        st.markdown("**率定场次情况**")
+                        for model_name in model_names_for_comparison:
+                            model_calib_data = [d for d in calib_data if d['模型'] == model_name]
+                            if model_calib_data:
+                                calib_nse = np.mean([d['NSE'] for d in model_calib_data])
+                                calib_kge = np.mean([d['KGE'] for d in model_calib_data])
+                                calib_rmse = np.mean([d['RMSE'] for d in model_calib_data])
+                                calib_pbias = np.mean([d['PBIAS'] for d in model_calib_data])
+                                st.markdown(f"**{model_name}**")
+                                st.metric("NSE", f"{calib_nse:.4f}")
+                                st.metric("KGE", f"{calib_kge:.4f}")
+                                st.metric("RMSE", f"{calib_rmse:.4f}")
+                                st.metric("PBIAS", f"{calib_pbias:.2f}%")
+                                st.divider()
                     
                     with col2:
-                        st.markdown("**验证场次平均**")
-                        valid_nse = np.mean([d['NSE'] for d in valid_data])
-                        valid_kge = np.mean([d['KGE'] for d in valid_data])
-                        valid_rmse = np.mean([d['RMSE'] for d in valid_data])
-                        valid_pbias = np.mean([d['PBIAS'] for d in valid_data])
-                        st.metric("NSE", f"{valid_nse:.4f}")
-                        st.metric("KGE", f"{valid_kge:.4f}")
-                        st.metric("RMSE", f"{valid_rmse:.4f}")
-                        st.metric("PBIAS", f"{valid_pbias:.2f}%")
+                        st.markdown("**验证场次情况**")
+                        for model_name in model_names_for_comparison:
+                            model_valid_data = [d for d in valid_data if d['模型'] == model_name]
+                            if model_valid_data:
+                                valid_nse = np.mean([d['NSE'] for d in model_valid_data])
+                                valid_kge = np.mean([d['KGE'] for d in model_valid_data])
+                                valid_rmse = np.mean([d['RMSE'] for d in model_valid_data])
+                                valid_pbias = np.mean([d['PBIAS'] for d in model_valid_data])
+                                st.markdown(f"**{model_name}**")
+                                st.metric("NSE", f"{valid_nse:.4f}")
+                                st.metric("KGE", f"{valid_kge:.4f}")
+                                st.metric("RMSE", f"{valid_rmse:.4f}")
+                                st.metric("PBIAS", f"{valid_pbias:.2f}%")
+                                st.divider()
                     
                     with col3:
                         st.markdown("**XGB校正平均**")
