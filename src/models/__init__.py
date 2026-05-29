@@ -8,22 +8,22 @@ from .registry import ModelRegistry
 try:
     from .model_tank import TankModel
     ModelRegistry.register(TankModel())
-    print("[HydroTune-AI] tank水箱模型已注册")
+    print("[HydroTune-AI] Tank Model registered")
 except ImportError as e:
-    print(f"[HydroTune-AI] Tank水箱模型注册失败: {e}")
+    print(f"[HydroTune-AI] Tank Model registration failed: {e}")
 
 # 注册HBV模型 (完整版，需日尺度)
 try:
     from .model_hbv import HBVModelAdapter
     ModelRegistry.register(HBVModelAdapter())
-    print("[HydroTune-AI] HBV模型已注册")
+    print("[HydroTune-AI] HBV Model registered")
 except ImportError as e:
-    print(f"[HydroTune-AI] HBV模型注册失败: {e}")
+    print(f"[HydroTune-AI] HBV Model registration failed: {e}")
 
 # 注册新安江模型V2
 try:
     from .model_xaj_v2 import XAJModelV2
     ModelRegistry.register(XAJModelV2())
-    print("[HydroTune-AI] 新安江模型V2已注册")
+    print("[HydroTune-AI] XAJ Model registered")
 except ImportError as e:
-    print(f"[HydroTune-AI] 新安江模型V2注册失败: {e}")
+    print(f"[HydroTune-AI] XAJ Model registration failed: {e}")

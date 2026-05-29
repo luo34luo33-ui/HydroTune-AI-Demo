@@ -13,6 +13,7 @@ import pandas as pd
 from dataclasses import dataclass, field, asdict
 from typing import Dict, List, Optional, Any
 from datetime import datetime
+from src.llm_api import get_language
 
 
 @dataclass
@@ -42,13 +43,14 @@ class FloodSemanticCode:
     
     def to_json_summary(self) -> str:
         """转换为JSON摘要（供LLM使用）"""
+        lang = get_language()
         event_id = self.event_id if self.event_id else "Unknown"
         magnitude = self.magnitude if self.magnitude else "unknown"
         rise_type = self.rise_type if self.rise_type else "unknown"
         recession_type = self.recession_type if self.recession_type else "unknown"
         peak_shape = self.peak_shape if self.peak_shape else "unknown"
         rainfall_driven = self.rainfall_driven if self.rainfall_driven else "unknown"
-        selection_reason = self.selection_reason if self.selection_reason else "无"
+        selection_reason = self.selection_reason if self.selection_reason else ("None" if lang == 'en' else "无")
         start_date = self.start_date if self.start_date else "Unknown"
         end_date = self.end_date if self.end_date else "Unknown"
         
@@ -396,15 +398,26 @@ class FloodSemanticEncoder:
             )
     
     def _generate_selection_reason(self, magnitude: str, peak_flow: float, rep_score: float) -> str:
-        """生成选取理由"""
-        if magnitude == 'extreme':
-            return f"极端洪水，峰值{peak_flow:.1f}m³/s，代表性最强"
-        elif magnitude == 'large':
-            return f"较大洪水，峰值{peak_flow:.1f}m³/s"
-        elif magnitude == 'medium':
-            return f"中等洪水，峰值{peak_flow:.1f}m³/s"
+        """Generate selection reason text"""
+        lang = get_language()
+        if lang == 'en':
+            if magnitude == 'extreme':
+                return f"Extreme flood, peak {peak_flow:.1f} m³/s, most representative"
+            elif magnitude == 'large':
+                return f"Large flood, peak {peak_flow:.1f} m³/s"
+            elif magnitude == 'medium':
+                return f"Medium flood, peak {peak_flow:.1f} m³/s"
+            else:
+                return f"Small flood, peak {peak_flow:.1f} m³/s"
         else:
-            return f"小型洪水，峰值{peak_flow:.1f}m³/s"
+            if magnitude == 'extreme':
+                return f"极端洪水，峰值{peak_flow:.1f}m³/s，代表性最强"
+            elif magnitude == 'large':
+                return f"较大洪水，峰值{peak_flow:.1f}m³/s"
+            elif magnitude == 'medium':
+                return f"中等洪水，峰值{peak_flow:.1f}m³/s"
+            else:
+                return f"小型洪水，峰值{peak_flow:.1f}m³/s"
     
     def to_json_for_llm(self, codes: List[FloodSemanticCode]) -> str:
         """将语义编码列表转换为供LLM使用的JSON格式"""

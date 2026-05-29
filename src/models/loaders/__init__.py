@@ -23,7 +23,7 @@ def get_loader(model_name: str) -> BaseLoader:
         return TankLoader()
     elif 'HBV' in model_name:
         return HBVLoader()
-    elif '新安江' in model_name or 'XAJ' in model_name:
+    elif 'XAJ' in model_name or 'Xinanjiang' in model_name:
         return XAJLoader()
     else:
         return TemplateLoader()

@@ -21,7 +21,7 @@ import numpy as np
 from scipy import stats
 
 from src.flood_semantic_encoder import FloodSemanticCode, FloodSemanticEncoder
-from src.llm_api import call_minimax
+from src.llm_api import call_minimax, get_language
 
 
 @dataclass
@@ -365,17 +365,14 @@ class SemanticPreAnalyzer:
         quality: DataQualityMetrics,
         multi_file_mode: bool = False
     ) -> str:
-        """生成分析图片并转换为Base64
-        
-        Args:
-            multi_file_mode: 是否为多文件多场洪水模式
-        """
+        """Generate analysis plot and convert to Base64"""
+        lang = get_language()
         try:
             n_events = len(semantic_codes)
             is_multi_flood = n_events > 1 or (n_events == 1 and len(flow_data) > 500)
             
             fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-            fig.suptitle('洪水场次数据预分析', fontsize=16, fontweight='bold')
+            fig.suptitle('Flood Event Data Pre-Analysis' if lang == 'en' else '洪水场次数据预分析', fontsize=16, fontweight='bold')
             
             if is_multi_flood or multi_file_mode:
                 peaks = np.array([c.peak_flow for c in semantic_codes])
@@ -383,37 +380,36 @@ class SemanticPreAnalyzer:
                 
                 ax1 = axes[0, 0]
                 if len(peaks) >= 3:
-                    self._plot_pearson3_curve(ax1, peaks, '洪峰流量', 'm³/s')
+                    self._plot_pearson3_curve(ax1, peaks, 'Peak Flow' if lang == 'en' else '洪峰流量', 'm³/s')
                 else:
-                    ax1.text(0.5, 0.5, '样本不足\n无法进行频率分析', ha='center', va='center', fontsize=14)
-                    ax1.set_title('洪峰频率曲线（P-III型）', fontsize=12)
+                    ax1.text(0.5, 0.5, 'Insufficient samples\nCannot perform frequency analysis' if lang == 'en' else '样本不足\n无法进行频率分析', ha='center', va='center', fontsize=14)
+                    ax1.set_title('Peak Flow Frequency Curve (P-III)' if lang == 'en' else '洪峰频率曲线（P-III型）', fontsize=12)
                 
                 ax2 = axes[0, 1]
                 if len(volumes) >= 3:
-                    self._plot_pearson3_curve(ax2, volumes, '洪水总量', '10⁴m³')
+                    self._plot_pearson3_curve(ax2, volumes, 'Flood Volume' if lang == 'en' else '洪水总量', '10⁴m³')
                 else:
-                    ax2.text(0.5, 0.5, '样本不足\n无法进行频率分析', ha='center', va='center', fontsize=14)
-                    ax2.set_title('洪水总量频率曲线（P-III型）', fontsize=12)
+                    ax2.text(0.5, 0.5, 'Insufficient samples\nCannot perform frequency analysis' if lang == 'en' else '样本不足\n无法进行频率分析', ha='center', va='center', fontsize=14)
+                    ax2.set_title('Flood Volume Frequency Curve (P-III)' if lang == 'en' else '洪水总量频率曲线（P-III型）', fontsize=12)
             else:
-                xlabel = '时间(天)' if self.timestep == 'daily' else '时间(h)'
+                xlabel = 'Time (days)' if self.timestep == 'daily' else 'Time (h)' if lang == 'en' else ('时间(天)' if self.timestep == 'daily' else '时间(h)')
                 
                 ax1 = axes[0, 0]
                 time_axis = range(len(flow_data))
-                ax1.plot(time_axis, flow_data, 'b-', linewidth=1.2, label='流量')
+                ax1.plot(time_axis, flow_data, 'b-', linewidth=1.2, label='Flow' if lang == 'en' else '流量')
                 ax1.fill_between(time_axis, 0, flow_data, alpha=0.3, color='steelblue')
                 
                 ax1.set_xlabel(xlabel, fontsize=11)
-                ax1.set_ylabel(r'流量 ($m^3/s$)', fontsize=11)
-                ax1.set_title('洪水过程线', fontsize=12)
+                ax1.set_ylabel(r'Flow ($m^3/s$)' if lang == 'en' else r'流量 ($m^3/s$)', fontsize=11)
+                ax1.set_title('Flood Hydrograph' if lang == 'en' else '洪水过程线', fontsize=12)
                 ax1.legend(fontsize=9)
                 ax1.grid(True, alpha=0.3)
                 
                 ax2 = axes[0, 1]
                 peak_idx = int(np.argmax(flow_data))
-                peak_time = peak_idx if self.timestep == 'daily' else peak_idx
                 ax2.bar([0], [flow_data[peak_idx]], color='steelblue', alpha=0.8)
-                ax2.set_ylabel(r'峰值流量 ($m^3/s$)', fontsize=11)
-                ax2.set_title(f'洪峰: {flow_data[peak_idx]:.1f} m³/s', fontsize=12)
+                ax2.set_ylabel(r'Peak Flow ($m^3/s$)' if lang == 'en' else r'峰值流量 ($m^3/s$)', fontsize=11)
+                ax2.set_title(f'Peak: {flow_data[peak_idx]:.1f} m³/s' if lang == 'en' else f'洪峰: {flow_data[peak_idx]:.1f} m³/s', fontsize=12)
                 ax2.set_xticks([])
                 ax2.grid(True, alpha=0.3, axis='y')
             
@@ -427,24 +423,27 @@ class SemanticPreAnalyzer:
                     z = np.polyfit(precips, volumes, 1)
                     p = np.poly1d(z)
                     x_line = np.linspace(min(precips), max(precips), 100)
-                    ax3.plot(x_line, p(x_line), 'r--', linewidth=1.5, alpha=0.7, label='趋势线')
+                    ax3.plot(x_line, p(x_line), 'r--', linewidth=1.5, alpha=0.7, label='Trend Line' if lang == 'en' else '趋势线')
                 
-                ax3.set_xlabel('总降水量 (mm)', fontsize=11)
-                ax3.set_ylabel(r'洪水总量 ($10^4 m^3$)', fontsize=11)
-                ax3.set_title('降水-径流关系', fontsize=12)
+                ax3.set_xlabel('Total Precipitation (mm)' if lang == 'en' else '总降水量 (mm)', fontsize=11)
+                ax3.set_ylabel(r'Flood Volume ($10^4 m^3$)' if lang == 'en' else r'洪水总量 ($10^4 m^3$)', fontsize=11)
+                ax3.set_title('Precipitation-Runoff Relationship' if lang == 'en' else '降水-径流关系', fontsize=12)
                 ax3.legend(fontsize=9)
                 ax3.grid(True, alpha=0.3)
             elif semantic_codes:
-                ax3.text(0.5, 0.5, '单场洪水\n无对比数据', ha='center', va='center', fontsize=14)
-                ax3.set_title('降水-径流关系', fontsize=12)
+                ax3.text(0.5, 0.5, 'Single event\nNo comparison data' if lang == 'en' else '单场洪水\n无对比数据', ha='center', va='center', fontsize=14)
+                ax3.set_title('Precipitation-Runoff Relationship' if lang == 'en' else '降水-径流关系', fontsize=12)
             
             ax4 = axes[1, 1]
-            metrics = ['完整率', '连续性', '相关性', '质量等级']
+            if lang == 'en':
+                metrics = ['Completeness', 'Continuity', 'Correlation', 'Quality']
+            else:
+                metrics = ['完整率', '连续性', '相关性', '质量等级']
             values = [
                 quality.completeness,
                 quality.continuity,
                 quality.correlation * 100,
-                {'优秀': 100, '良好': 80, '一般': 60, '较差': 40}.get(quality.quality_level, 60)
+                {'优秀': 100, '良好': 80, '一般': 60, '较差': 40, 'Excellent': 100, 'Good': 80, 'Fair': 60, 'Poor': 40}.get(quality.quality_level, 60)
             ]
             
             angles = np.linspace(0, 2 * np.pi, len(metrics), endpoint=False).tolist()
@@ -458,7 +457,7 @@ class SemanticPreAnalyzer:
             ax4.set_xticks(angles[:-1])
             ax4.set_xticklabels(metrics, fontsize=10)
             ax4.set_ylim(0, 100)
-            ax4.set_title('数据质量雷达图', fontsize=12, pad=20)
+            ax4.set_title('Data Quality Radar Chart' if lang == 'en' else '数据质量雷达图', fontsize=12, pad=20)
             
             plt.tight_layout()
             
@@ -473,18 +472,25 @@ class SemanticPreAnalyzer:
             return img_base64
             
         except Exception as e:
-            warnings.warn(f"生成图片失败: {e}")
+            if lang == 'en':
+                warnings.warn(f"Failed to generate plot: {e}")
+            else:
+                warnings.warn(f"生成图片失败: {e}")
             return ""
     
     def _plot_pearson3_curve(self, ax, data: np.ndarray, label: str, unit: str):
         """
-        绘制皮尔逊III型（P-III）频率曲线
-        符合水文惯例：采用正态概率坐标横轴、经验点据降序排列、显示统计参数
+        Plot Pearson Type III (P-III) frequency curve
         """
+        lang = get_language()
         n = len(data)
         if n < 3:
-            ax.text(0.5, 0.5, f'样本不足(n={n})', ha='center', va='center', fontsize=14)
-            ax.set_title(f'{label}频率曲线（P-III型）', fontsize=12)
+            if lang == 'en':
+                ax.text(0.5, 0.5, f'Insufficient samples (n={n})', ha='center', va='center', fontsize=14)
+                ax.set_title(f'{label} Frequency Curve (P-III)', fontsize=12)
+            else:
+                ax.text(0.5, 0.5, f'样本不足(n={n})', ha='center', va='center', fontsize=14)
+                ax.set_title(f'{label}频率曲线（P-III型）', fontsize=12)
             return
         
         # 1. 数据排序与经验频率计算（水文惯例：针对洪水等极大值，采用降序）
@@ -555,9 +561,15 @@ class SemanticPreAnalyzer:
                 zorder=4)
         
         # 9. 标题与图例
-        ax.set_xlabel('频率 P (%)', fontsize=11)
-        ax.set_ylabel(f'{label} ({unit})', fontsize=11)
-        ax.set_title(f'{label}理论与经验频率曲线 (P-III)', fontsize=12, pad=10)
+        lang = get_language()
+        if lang == 'en':
+            ax.set_xlabel('Frequency P (%)', fontsize=11)
+            ax.set_ylabel(f'{label} ({unit})', fontsize=11)
+            ax.set_title(f'{label} Theoretical & Empirical Frequency Curve (P-III)', fontsize=12, pad=10)
+        else:
+            ax.set_xlabel('频率 P (%)', fontsize=11)
+            ax.set_ylabel(f'{label} ({unit})', fontsize=11)
+            ax.set_title(f'{label}理论与经验频率曲线 (P-III)', fontsize=12, pad=10)
         ax.legend(loc='lower left', fontsize=10, framealpha=0.9)
 
     def generate_analysis_prompt(
@@ -565,10 +577,60 @@ class SemanticPreAnalyzer:
         semantic_codes: List[FloodSemanticCode],
         quality: DataQualityMetrics
     ) -> str:
-        """生成LLM分析提示词"""
+        """Generate LLM analysis prompt"""
+        lang = get_language()
         codes_json = self.encoder.to_json_for_llm(semantic_codes)
         
-        prompt = f"""你是一位资深水文数据分析师。请对以下洪水场次数据进行预分析评价，生成一份专业的数据预分析报告。
+        if lang == 'en':
+            prompt = f"""You are a senior hydrological data analyst. Please analyze the following flood event data and generate a professional pre-analysis report.
+
+## Data Quality Metrics
+- Data Completeness: {quality.completeness:.1f}%
+- Time Continuity: {quality.continuity:.1f}%
+- Precipitation-Runoff Correlation: {quality.correlation:.3f}
+- Quality Level: {quality.quality_level}
+
+## Flood Event Semantic Encoding
+{codes_json}
+
+## Analysis Requirements
+Please strictly follow the structure below, using Markdown headings:
+
+### 1. Flood Characteristics Summary
+Summarize events by "magnitude → peak shape → duration → rise/recession characteristics → rainfall driving", noting typical feature ranges for each category.
+
+### 2. Anomaly Detection
+Clearly identify the following anomalies:
+- Negative or abnormal flood volumes
+- Extreme peaks (exceeding mean + 2 standard deviations)
+- Abnormal duration (too short <3 days or too long >30 days)
+- Outlier flood volumes
+
+### 3. Spatiotemporal Distribution
+Analyze the temporal distribution characteristics of flood events (seasonality, concentration, etc.).
+
+### 4. Data Representativeness Assessment
+Evaluate the coverage of representative floods based on representative_score.
+
+### 5. Data Quality Evaluation
+Professionally evaluate data completeness, continuity, and correlation. Clearly point out any data issues.
+
+### 6. Model Calibration Strategy Recommendations
+Suggest strategies by magnitude:
+- Small floods: recommended calibration strategy
+- Medium floods: recommended calibration strategy
+- Large floods: recommended calibration strategy
+- Extreme floods: recommended calibration strategy
+
+### 7. Anomaly Data Handling Recommendations
+Provide specific suggestions for handling identified anomalies.
+
+---
+Reference both numerical features (peak flow m³/s, flood volume 10⁴m³, duration days) and semantic labels (rapid/slow rise, sharp/rounded peak shape, high/medium/low rainfall driving) in the text to enhance professionalism.
+
+Please respond in Markdown format, keeping it professional and concise, covering all flood magnitude categories."""
+        else:
+            prompt = f"""你是一位资深水文数据分析师。请对以下洪水场次数据进行预分析评价，生成一份专业的数据预分析报告。
 
 ## 数据质量指标
 - 数据完整率: {quality.completeness:.1f}%
@@ -666,14 +728,21 @@ class SemanticPreAnalyzer:
             
             prompt = self.generate_analysis_prompt(semantic_codes, quality)
             
-            system_prompt = """你是HydroTune-AI水文数据智能分析师。你擅长分析洪水数据、提取水文特征、生成专业的数据解读报告。"""
+            lang = get_language()
+            if lang == 'en':
+                system_prompt = """You are HydroTune-AI hydrological data intelligence analyst. You are skilled at analyzing flood data, extracting hydrological features, and generating professional data interpretation reports."""
+            else:
+                system_prompt = """你是HydroTune-AI水文数据智能分析师。你擅长分析洪水数据、提取水文特征、生成专业的数据解读报告。"""
             
             llm_result = call_llm(prompt, system_prompt)
             
             if llm_result and not llm_result.startswith("[ERROR]"):
                 llm_report = llm_result.replace('***', '').replace('---', '').strip()
             else:
-                llm_report = f"**LLM分析暂时不可用**\n\n基础分析结果：\n\n" + self._generate_fallback_report(semantic_codes, quality)
+                if lang == 'en':
+                    llm_report = f"**LLM analysis temporarily unavailable**\n\nBasic analysis results:\n\n" + self._generate_fallback_report(semantic_codes, quality)
+                else:
+                    llm_report = f"**LLM分析暂时不可用**\n\n基础分析结果：\n\n" + self._generate_fallback_report(semantic_codes, quality)
         else:
             llm_report = self._generate_fallback_report(semantic_codes, quality)
         

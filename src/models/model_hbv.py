@@ -72,7 +72,7 @@ class HBVModelAdapter(BaseModel):
 
     @property
     def name(self) -> str:
-        return "HBV模型"
+        return "HBV Model"
 
     @property
     def model_type(self) -> str:

@@ -7,25 +7,37 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import numpy as np
 from typing import Dict, Any, List
+from src.llm_api import get_language
 
 
 class VisualizationHandler:
-    """结果可视化处理器"""
+    """Result Visualization Handler"""
     
     @staticmethod
     def plot_flow_comparison(observed: np.ndarray, simulated: np.ndarray, 
-                             title: str = "流量过程对比", timestep: str = 'daily'):
-        """绘制流量过程对比图"""
+                             title: str = None, timestep: str = 'daily'):
+        """Plot flow time series comparison"""
+        lang = get_language()
+        if title is None:
+            title = "Flow Time Series Comparison" if lang == 'en' else "流量过程对比"
+        
         fig, ax = plt.subplots(figsize=(12, 4), dpi=150)
         
-        xlabel_text = "时间(天)" if timestep == 'daily' else "时间(h)"
+        if lang == 'en':
+            xlabel_text = "Time (days)" if timestep == 'daily' else "Time (h)"
+            flow_label = "Observed Flow"
+            sim_label = "Simulated Flow"
+        else:
+            xlabel_text = "时间(天)" if timestep == 'daily' else "时间(h)"
+            flow_label = "观测流量"
+            sim_label = "模拟流量"
         
-        ax.plot(observed, 'b-', linewidth=1.5, label='观测流量')
-        ax.plot(simulated, 'r--', linewidth=1.5, label='模拟流量')
+        ax.plot(observed, 'b-', linewidth=1.5, label=flow_label)
+        ax.plot(simulated, 'r--', linewidth=1.5, label=sim_label)
         ax.fill_between(range(len(observed)), 0, observed, alpha=0.2, color='blue')
         
         ax.set_xlabel(xlabel_text, fontsize=12)
-        ax.set_ylabel(r'流量 ($m^3/s$)', fontsize=12)
+        ax.set_ylabel(r'Flow ($m^3/s$)' if lang == 'en' else r'流量 ($m^3/s$)', fontsize=12)
         ax.set_title(title, fontsize=14)
         ax.legend(fontsize=10)
         ax.grid(True, alpha=0.3)
@@ -34,16 +46,20 @@ class VisualizationHandler:
     
     @staticmethod
     def plot_scatter(observed: np.ndarray, simulated: np.ndarray,
-                     title: str = "观测-模拟散点图"):
-        """绘制散点图"""
+                     title: str = None):
+        """Plot scatter plot"""
+        lang = get_language()
+        if title is None:
+            title = "Observed vs Simulated Scatter Plot" if lang == 'en' else "观测-模拟散点图"
+        
         fig, ax = plt.subplots(figsize=(8, 8), dpi=150)
         
         max_val = max(np.max(observed), np.max(simulated)) * 1.1
-        ax.plot([0, max_val], [0, max_val], 'k--', linewidth=1, label='1:1线')
+        ax.plot([0, max_val], [0, max_val], 'k--', linewidth=1, label='1:1 Line' if lang == 'en' else '1:1线')
         ax.scatter(observed, simulated, alpha=0.5, s=20)
         
-        ax.set_xlabel('观测流量 ($m^3/s$)', fontsize=12)
-        ax.set_ylabel('模拟流量 ($m^3/s$)', fontsize=12)
+        ax.set_xlabel('Observed Flow ($m^3/s$)' if lang == 'en' else '观测流量 ($m^3/s$)', fontsize=12)
+        ax.set_ylabel('Simulated Flow ($m^3/s$)' if lang == 'en' else '模拟流量 ($m^3/s$)', fontsize=12)
         ax.set_title(title, fontsize=14)
         ax.set_xlim(0, max_val)
         ax.set_ylim(0, max_val)

@@ -50,7 +50,7 @@ class XAJModelV2(BaseModel):
     
     @property
     def name(self) -> str:
-        return "新安江模型2"
+        return "XAJ Model"
     
     @property
     def model_type(self) -> str:

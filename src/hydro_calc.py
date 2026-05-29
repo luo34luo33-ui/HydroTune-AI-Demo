@@ -630,19 +630,19 @@ def get_model_param_info(model_name: str) -> Dict[str, Dict]:
         参数信息字典 {参数名: {description, unit, bounds}}
     """
     param_info = {
-        '水箱模型': {
+        'Tank Model': {
             'k1': {'description': '快速流调蓄系数', 'unit': '-', 'bounds': (0.01, 0.3)},
             'k2': {'description': '慢速流调蓄系数（基流）', 'unit': '-', 'bounds': (0.001, 0.05)},
             'c': {'description': '产流系数', 'unit': '-', 'bounds': (0.01, 0.3)},
         },
-        'HBV模型': {
+        'HBV Model': {
             'fc': {'description': '田间持水量', 'unit': 'mm', 'bounds': (50.0, 500.0)},
             'beta': {'description': '形状参数', 'unit': '-', 'bounds': (1.0, 5.0)},
             'k0': {'description': '快速出流系数', 'unit': '-', 'bounds': (0.01, 0.5)},
             'k1': {'description': '慢速出流系数', 'unit': '-', 'bounds': (0.001, 0.1)},
             'lp': {'description': '蒸散发限制系数', 'unit': '-', 'bounds': (0.3, 1.0)},
         },
-        '新安江模型': {
+        'XAJ Model': {
             'k': {'description': '蒸散发系数', 'unit': '-', 'bounds': (0.5, 1.5)},
             'b': {'description': '蓄水容量曲线指数', 'unit': '-', 'bounds': (0.1, 0.5)},
             'im': {'description': '不透水面积比例', 'unit': '-', 'bounds': (0.01, 0.1)},

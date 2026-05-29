@@ -7,6 +7,7 @@ import numpy as np
 from typing import Callable, Tuple, List, Dict, Any
 from dataclasses import dataclass
 from datetime import datetime
+from src.llm_api import get_language
 
 
 # ============================================================
@@ -30,7 +31,17 @@ def infer_timestep_by_llm(dates: pd.Series, llm_caller: Callable = None) -> str:
         date_samples = dates.head(20).tolist()
         date_samples_str = "\n".join([str(d) for d in date_samples])
         
-        prompt = f"""请分析以下日期序列，判断这是小时尺度还是日尺度的数据：
+        lang = get_language()
+        if lang == 'en':
+            prompt = f"""Please analyze the following date series and determine if it is hourly or daily data:
+
+{date_samples_str}
+... (total {len(dates)} records)
+
+Please output directly: hourly or daily, do not output anything else.
+"""
+        else:
+            prompt = f"""请分析以下日期序列，判断这是小时尺度还是日尺度的数据：
 
 {date_samples_str}
 ... (共 {len(dates)} 条记录)
@@ -272,9 +283,34 @@ def extract_fingerprint(df: pd.DataFrame) -> dict:
 
 
 # ============================================================
-# 沙盒执行器 Prompt 模板
+# Sandbox Executor Prompt Template
 # ============================================================
-SANDBOX_PROMPT = """你是一个数据清洗专家。用户上传了一份水文数据，但列名不符合标准格式。
+def _get_sandbox_prompt() -> str:
+    """Return the sandbox prompt in the appropriate language"""
+    if get_language() == 'en':
+        return """You are a data cleaning expert. The user uploaded hydrological data but the column names don't match the standard format.
+
+**Data Fingerprint:**
+{fingerprint}
+
+**Target Format:**
+The final DataFrame must contain the following columns (order doesn't matter):
+- 'date' (datetime type)
+- 'precip' (float, precipitation mm)
+- 'evap' (float, evaporation mm, if no evaporation column, create a column of all zeros)
+- 'flow' (float, flow m³/s)
+
+**Requirements:**
+1. Generate Python code, input variable name is `df`, output variable name is also `df`
+2. The code should only do: column renaming, type conversion, missing value handling
+3. Don't import new libraries, only use pandas and numpy
+4. Output only pure Python code, no explanations, no ```python ``` wrapping
+5. The code must be directly executable with `exec()`
+6. If the evaporation column is missing, create an evap column of all zeros
+
+**Code:**"""
+    else:
+        return """你是一个数据清洗专家。用户上传了一份水文数据，但列名不符合标准格式。
 
 **数据指纹：**
 {fingerprint}
@@ -298,24 +334,24 @@ SANDBOX_PROMPT = """你是一个数据清洗专家。用户上传了一份水文
 
 
 # ============================================================
-# 核心：沙盒执行器
+# Core: Sandbox Executor
 # ============================================================
 def clean_data_with_sandbox(df: pd.DataFrame, llm_caller: Callable) -> Tuple[pd.DataFrame, str]:
     """
-    核心功能：向 LLM 发送数据指纹 → 生成清洗代码 → exec() 执行
+    Core: Send data fingerprint to LLM -> generate cleaning code -> exec() execution
 
     Args:
-        df: 原始数据
-        llm_caller: llm_api.py 中的 call_minimax 函数
+        df: Raw data
+        llm_caller: call_minimax function from llm_api.py
 
     Returns:
-        (清洗后的标准格式 DataFrame, 时间尺度 'hourly'/'daily')
+        (cleaned standard DataFrame, timestep 'hourly'/'daily')
     """
     original_df = df.copy()
 
     fingerprint = extract_fingerprint(original_df)
 
-    prompt = SANDBOX_PROMPT.format(fingerprint=fingerprint)
+    prompt = _get_sandbox_prompt().format(fingerprint=fingerprint)
 
     code = llm_caller(prompt)
 

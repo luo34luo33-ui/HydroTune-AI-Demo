@@ -30,7 +30,7 @@ def get_runner(model_name: str) -> 'BaseRunner':
         return HBVRunner()
     elif 'V3' in model_name:
         return XAJV3Runner()
-    elif '新安江' in model_name or 'XAJ' in model_name:
+    elif 'XAJ' in model_name or 'Xinanjiang' in model_name:
         return XAJRunner()
     else:
         return TemplateRunner()

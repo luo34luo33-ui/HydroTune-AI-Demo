@@ -14,7 +14,7 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
-from src.llm_api import call_minimax
+from src.llm_api import call_minimax, get_language
 from src.data_preanalysis import (
     PreAnalysisResult, DataQualityResult, FloodEvent, FrequencyAnalysisResult
 )
@@ -25,120 +25,195 @@ def generate_preanalysis_report(
     call_llm=call_minimax
 ) -> str:
     """
-    生成数据预分析报告
-    
-    Args:
-        result: 预分析结果
-        call_llm: LLM调用函数
-        
-    Returns:
-        Markdown格式的报告
+    Generate data pre-analysis report
     """
+    lang = get_language()
     quality = result.quality
     events = result.events
     freq = result.frequency
     selected = result.selected_events
     
-    report_lines = [
-        "# 数据预分析报告",
-        "",
-        f"**生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-        f"**流域面积**: {result.area} km2",
-        f"**时间尺度**: {'小时' if result.timestep == 'hourly' else '日'}尺度",
-        "",
-        "---",
-        "",
-        "## 1. 数据质量评估",
-        "",
-    ]
-    
-    report_lines.append("| 指标 | 数值 | 评价 |")
-    report_lines.append("|------|------|------|")
-    report_lines.append(f"| 数据完整率 | {quality.completeness:.1f}% | {'良好' if quality.completeness >= 95 else '偏低'} |")
-    report_lines.append(f"| 时间连续性 | {quality.continuity:.1f}% | {'良好' if quality.continuity >= 95 else '偏低'} |")
-    report_lines.append(f"| 降水-径流相关性 | {quality.correlation:.3f} | {'良好' if quality.correlation >= 0.5 else '偏低'} |")
-    report_lines.append(f"| 极值比例 | {quality.outlier_ratio:.1f}% | {'正常' if quality.outlier_ratio <= 5 else '偏高'} |")
-    report_lines.append(f"| **质量等级** | **{quality.quality_level}** | - |")
-    report_lines.append("")
-    
-    if quality.issues:
-        report_lines.append("**数据问题说明**：")
-        for issue in quality.issues:
-            report_lines.append(f"- {issue}")
-        report_lines.append("")
-    
-    report_lines.extend([
-        "## 2. 洪水事件统计",
-        "",
-        f"共识别到 **{len(events)}** 场洪水事件",
-        "",
-        "| 场次 | 起止日期 | 峰值流量(m3/s) | 洪水总量(mm) | 历时(天) | 涨率 | 落率 |",
-        "|------|----------|---------------|-------------|---------|------|------|",
-    ])
-    
-    for e in events:
-        start_str = e.start_date.strftime('%Y-%m-%d') if hasattr(e.start_date, 'strftime') else str(e.start_date)[:10]
-        end_str = e.end_date.strftime('%Y-%m-%d') if hasattr(e.end_date, 'strftime') else str(e.end_date)[:10]
-        report_lines.append(
-            f"| {e.event_id} | {start_str} ~ {end_str} | {e.peak_flow:.1f} | "
-            f"{e.flood_volume:.1f} | {e.duration} | {e.rise_rate:.3f} | {e.recession_rate:.3f} |"
-        )
-    report_lines.append("")
-    
-    report_lines.extend([
-        "## 3. 频率分析结果",
-        "",
-        "### 3.1 统计参数",
-        "",
-    ])
-    
-    report_lines.append(f"- 样本数量: {freq.n_samples} 场")
-    report_lines.append(f"- 峰值流量均值: {freq.mean:.2f} m3/s")
-    report_lines.append(f"- 标准差: {freq.std:.2f} m3/s")
-    report_lines.append(f"- 变差系数(Cv): {freq.cv:.3f}")
-    report_lines.append(f"- 偏度系数(Cs): {freq.cs:.3f}")
-    report_lines.append("")
-    
-    report_lines.append("### 3.2 设计洪水成果")
-    report_lines.append("")
-    report_lines.append("| 重现期 | 设计流量(m3/s) |")
-    report_lines.append("|--------|---------------|")
-    for rp, val in freq.design_values.items():
-        report_lines.append(f"| {rp} | {val:.2f} |")
-    report_lines.append("")
-    
-    report_lines.extend([
-        "## 4. 代表性洪水选取",
-        "",
-        f"根据多准则分析，选取以下 **{len(selected)}** 场代表性洪水用于模型率定：",
-        "",
-        "| 场次 | 峰值流量 | 选取原因 |",
-        "|------|---------|---------|",
-    ])
-    
-    for e in selected:
-        report_lines.append(f"| {e.event_id} | {e.peak_flow:.2f} m3/s | {e.selection_reason} |")
-    report_lines.append("")
-    
-    if call_llm:
-        llm_prompt = _build_preanalysis_llm_prompt(quality, events, freq, selected)
-        report_lines.extend([
-            "## 5. LLM智能分析",
+    if lang == 'en':
+        ts_label = 'hourly' if result.timestep == 'hourly' else 'daily'
+        report_lines = [
+            "# Data Pre-Analysis Report",
             "",
-            "### 5.1 数据质量评价",
+            f"**Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"**Catchment Area**: {result.area} km2",
+            f"**Timestep**: {ts_label}",
+            "",
+            "---",
+            "",
+            "## 1. Data Quality Assessment",
+            "",
+        ]
+        report_lines.append("| Metric | Value | Rating |")
+        report_lines.append("|--------|-------|--------|")
+        report_lines.append(f"| Data Completeness | {quality.completeness:.1f}% | {'Good' if quality.completeness >= 95 else 'Low'} |")
+        report_lines.append(f"| Time Continuity | {quality.continuity:.1f}% | {'Good' if quality.continuity >= 95 else 'Low'} |")
+        report_lines.append(f"| Precip-Runoff Correlation | {quality.correlation:.3f} | {'Good' if quality.correlation >= 0.5 else 'Low'} |")
+        report_lines.append(f"| Outlier Ratio | {quality.outlier_ratio:.1f}% | {'Normal' if quality.outlier_ratio <= 5 else 'High'} |")
+        report_lines.append(f"| **Quality Level** | **{quality.quality_level}** | - |")
+        report_lines.append("")
+        if quality.issues:
+            report_lines.append("**Data Issues:**")
+            for issue in quality.issues:
+                report_lines.append(f"- {issue}")
+            report_lines.append("")
+        report_lines.extend([
+            "## 2. Flood Event Statistics",
+            "",
+            f"**{len(events)}** flood event(s) identified",
+            "",
+            "| Event | Period | Peak Flow (m3/s) | Flood Volume (mm) | Duration (days) | Rise Rate | Recession Rate |",
+            "|-------|--------|-----------------|-------------------|-----------------|-----------|----------------|",
+        ])
+        for e in events:
+            start_str = e.start_date.strftime('%Y-%m-%d') if hasattr(e.start_date, 'strftime') else str(e.start_date)[:10]
+            end_str = e.end_date.strftime('%Y-%m-%d') if hasattr(e.end_date, 'strftime') else str(e.end_date)[:10]
+            report_lines.append(
+                f"| {e.event_id} | {start_str} ~ {end_str} | {e.peak_flow:.1f} | "
+                f"{e.flood_volume:.1f} | {e.duration} | {e.rise_rate:.3f} | {e.recession_rate:.3f} |"
+            )
+        report_lines.append("")
+        report_lines.extend([
+            "## 3. Frequency Analysis",
+            "",
+            "### 3.1 Statistical Parameters",
             "",
         ])
+        report_lines.append(f"- Sample Size: {freq.n_samples} events")
+        report_lines.append(f"- Mean Peak Flow: {freq.mean:.2f} m3/s")
+        report_lines.append(f"- Standard Deviation: {freq.std:.2f} m3/s")
+        report_lines.append(f"- Coefficient of Variation (Cv): {freq.cv:.3f}")
+        report_lines.append(f"- Skewness (Cs): {freq.cs:.3f}")
+        report_lines.append("")
+        report_lines.append("### 3.2 Design Flood Results")
+        report_lines.append("")
+        report_lines.append("| Return Period | Design Flow (m3/s) |")
+        report_lines.append("|---------------|-------------------|")
+        for rp, val in freq.design_values.items():
+            report_lines.append(f"| {rp} | {val:.2f} |")
+        report_lines.append("")
+        report_lines.extend([
+            "## 4. Representative Flood Event Selection",
+            "",
+            f"**{len(selected)}** representative flood event(s) selected for model calibration:",
+            "",
+            "| Event | Peak Flow | Selection Reason |",
+            "|-------|-----------|-----------------|",
+        ])
+        for e in selected:
+            report_lines.append(f"| {e.event_id} | {e.peak_flow:.2f} m3/s | {e.selection_reason} |")
+        report_lines.append("")
         
-        stt = call_llm(llm_prompt)
-        if not stt.startswith("[ERROR]"):
-            report_lines.append(stt)
-        else:
-            report_lines.append("*LLM分析暂时不可用*")
-    
-    report_lines.append("")
-    report_lines.append("---")
-    report_lines.append("")
-    report_lines.append("*报告由 HydroTune-AI 系统自动生成*")
+        if call_llm:
+            llm_prompt = _build_preanalysis_llm_prompt(quality, events, freq, selected)
+            report_lines.extend([
+                "## 5. LLM Intelligent Analysis",
+                "",
+                "### 5.1 Data Quality Evaluation",
+                "",
+            ])
+            stt = call_llm(llm_prompt)
+            if not stt.startswith("[ERROR]"):
+                report_lines.append(stt)
+            else:
+                report_lines.append("*LLM analysis temporarily unavailable*")
+        
+        report_lines.append("")
+        report_lines.append("---")
+        report_lines.append("")
+        report_lines.append("*Report auto-generated by HydroTune-AI*")
+    else:
+        report_lines = [
+            "# 数据预分析报告",
+            "",
+            f"**生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"**流域面积**: {result.area} km2",
+            f"**时间尺度**: {'小时' if result.timestep == 'hourly' else '日'}尺度",
+            "",
+            "---",
+            "",
+            "## 1. 数据质量评估",
+            "",
+        ]
+        report_lines.append("| 指标 | 数值 | 评价 |")
+        report_lines.append("|------|------|------|")
+        report_lines.append(f"| 数据完整率 | {quality.completeness:.1f}% | {'良好' if quality.completeness >= 95 else '偏低'} |")
+        report_lines.append(f"| 时间连续性 | {quality.continuity:.1f}% | {'良好' if quality.continuity >= 95 else '偏低'} |")
+        report_lines.append(f"| 降水-径流相关性 | {quality.correlation:.3f} | {'良好' if quality.correlation >= 0.5 else '偏低'} |")
+        report_lines.append(f"| 极值比例 | {quality.outlier_ratio:.1f}% | {'正常' if quality.outlier_ratio <= 5 else '偏高'} |")
+        report_lines.append(f"| **质量等级** | **{quality.quality_level}** | - |")
+        report_lines.append("")
+        if quality.issues:
+            report_lines.append("**数据问题说明**：")
+            for issue in quality.issues:
+                report_lines.append(f"- {issue}")
+            report_lines.append("")
+        report_lines.extend([
+            "## 2. 洪水事件统计",
+            "",
+            f"共识别到 **{len(events)}** 场洪水事件",
+            "",
+            "| 场次 | 起止日期 | 峰值流量(m3/s) | 洪水总量(mm) | 历时(天) | 涨率 | 落率 |",
+            "|------|----------|---------------|-------------|---------|------|------|",
+        ])
+        for e in events:
+            start_str = e.start_date.strftime('%Y-%m-%d') if hasattr(e.start_date, 'strftime') else str(e.start_date)[:10]
+            end_str = e.end_date.strftime('%Y-%m-%d') if hasattr(e.end_date, 'strftime') else str(e.end_date)[:10]
+            report_lines.append(
+                f"| {e.event_id} | {start_str} ~ {end_str} | {e.peak_flow:.1f} | "
+                f"{e.flood_volume:.1f} | {e.duration} | {e.rise_rate:.3f} | {e.recession_rate:.3f} |"
+            )
+        report_lines.append("")
+        report_lines.extend([
+            "## 3. 频率分析结果",
+            "",
+            "### 3.1 统计参数",
+            "",
+        ])
+        report_lines.append(f"- 样本数量: {freq.n_samples} 场")
+        report_lines.append(f"- 峰值流量均值: {freq.mean:.2f} m3/s")
+        report_lines.append(f"- 标准差: {freq.std:.2f} m3/s")
+        report_lines.append(f"- 变差系数(Cv): {freq.cv:.3f}")
+        report_lines.append(f"- 偏度系数(Cs): {freq.cs:.3f}")
+        report_lines.append("")
+        report_lines.append("### 3.2 设计洪水成果")
+        report_lines.append("")
+        report_lines.append("| 重现期 | 设计流量(m3/s) |")
+        report_lines.append("|--------|---------------|")
+        for rp, val in freq.design_values.items():
+            report_lines.append(f"| {rp} | {val:.2f} |")
+        report_lines.append("")
+        report_lines.extend([
+            "## 4. 代表性洪水选取",
+            "",
+            f"根据多准则分析，选取以下 **{len(selected)}** 场代表性洪水用于模型率定：",
+            "",
+            "| 场次 | 峰值流量 | 选取原因 |",
+            "|------|---------|---------|",
+        ])
+        for e in selected:
+            report_lines.append(f"| {e.event_id} | {e.peak_flow:.2f} m3/s | {e.selection_reason} |")
+        report_lines.append("")
+        if call_llm:
+            llm_prompt = _build_preanalysis_llm_prompt(quality, events, freq, selected)
+            report_lines.extend([
+                "## 5. LLM智能分析",
+                "",
+                "### 5.1 数据质量评价",
+                "",
+            ])
+            stt = call_llm(llm_prompt)
+            if not stt.startswith("[ERROR]"):
+                report_lines.append(stt)
+            else:
+                report_lines.append("*LLM分析暂时不可用*")
+        report_lines.append("")
+        report_lines.append("---")
+        report_lines.append("")
+        report_lines.append("*报告由 HydroTune-AI 系统自动生成*")
     
     return "\n".join(report_lines)
 
@@ -151,6 +226,7 @@ def _build_preanalysis_llm_prompt(
 ) -> str:
     """构建预分析的LLM提示词"""
     
+    lang = get_language()
     event_summary = []
     for e in events[:10]:
         event_summary.append({
@@ -162,7 +238,42 @@ def _build_preanalysis_llm_prompt(
             'recession': e.recession_rate
         })
     
-    prompt = f"""你是一位资深水文数据分析师。请对以下水文数据进行预分析评价：
+    if lang == 'en':
+        prompt = f"""You are a senior hydrological data analyst. Please analyze the following hydrological data:
+
+## Data Overview
+- Catchment Area: {150.7944} km2
+- Flood Events Identified: {len(events)}
+- Representative Floods Selected: {len(selected)}
+
+## Data Quality Assessment
+- Completeness: {quality.completeness:.1f}%
+- Continuity: {quality.continuity:.1f}%
+- Correlation: {quality.correlation:.3f}
+- Quality Level: {quality.quality_level}
+
+## Flood Statistics
+| Event | Peak (m3/s) | Volume (mm) | Duration | Rise Rate | Recession Rate |
+"""
+        for e in event_summary:
+            prompt += f"| {e['id']} | {e['peak']:.1f} | {e['volume']:.1f} | {e['duration']} | {e['rise']:.3f} | {e['recession']:.3f} |\n"
+
+        prompt += f"""
+## Frequency Analysis
+- Mean: {freq.mean:.2f} m3/s
+- Cv: {freq.cv:.3f}
+- Cs: {freq.cs:.3f}
+
+Please analyze and evaluate from the following perspectives:
+1. Does the data quality meet the requirements for model calibration?
+2. Is the spatiotemporal distribution of flood events reasonable?
+3. Are the selected representative floods truly representative?
+4. How reliable are the frequency analysis results?
+5. Recommendations for subsequent model calibration
+
+Please respond in English with concise professional language, using Markdown format."""
+    else:
+        prompt = f"""你是一位资深水文数据分析师。请对以下水文数据进行预分析评价：
 
 ## 数据概况
 - 流域面积: {150.7944} km2
@@ -178,11 +289,10 @@ def _build_preanalysis_llm_prompt(
 ## 洪水统计
 | 场次 | 峰值(m3/s) | 洪量(mm) | 历时 | 涨率 | 落率 |
 """
-    
-    for e in event_summary:
-        prompt += f"| {e['id']} | {e['peak']:.1f} | {e['volume']:.1f} | {e['duration']} | {e['rise']:.3f} | {e['recession']:.3f} |\n"
-    
-    prompt += f"""
+        for e in event_summary:
+            prompt += f"| {e['id']} | {e['peak']:.1f} | {e['volume']:.1f} | {e['duration']} | {e['rise']:.3f} | {e['recession']:.3f} |\n"
+
+        prompt += f"""
 ## 频率分析
 - 均值: {freq.mean:.2f} m3/s
 - Cv: {freq.cv:.3f}
@@ -207,28 +317,34 @@ def generate_calibration_report(
     call_llm=call_minimax
 ) -> str:
     """
-    生成模型率定分析报告
-    
-    Args:
-        calibration_results: 率定结果
-        all_results: 所有洪水模拟结果
-        catchment_area: 流域面积
-        call_llm: LLM调用函数
-        
-    Returns:
-        Markdown格式的报告
+    Generate model calibration analysis report
     """
-    report_lines = [
-        "# 水文模型率定分析报告",
-        "",
-        f"**生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-        f"**流域面积**: {catchment_area} km2",
-        "",
-        "---",
-        "",
-        "## 1. 率定模型概览",
-        "",
-    ]
+    lang = get_language()
+    
+    if lang == 'en':
+        report_lines = [
+            "# Hydrological Model Calibration Report",
+            "",
+            f"**Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"**Catchment Area**: {catchment_area} km2",
+            "",
+            "---",
+            "",
+            "## 1. Calibration Model Overview",
+            "",
+        ]
+    else:
+        report_lines = [
+            "# 水文模型率定分析报告",
+            "",
+            f"**生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"**流域面积**: {catchment_area} km2",
+            "",
+            "---",
+            "",
+            "## 1. 率定模型概览",
+            "",
+        ]
     
     for model_name, result in calibration_results.items():
         report_lines.append(f"### {model_name}")
@@ -238,38 +354,42 @@ def generate_calibration_report(
         report_lines.append(f"- **PBIAS**: {result['pbias']:.1f}%")
         report_lines.append("")
     
+    file_key = "File" if lang == 'en' else "文件"
+    event_key = "Event" if lang == 'en' else "场次"
+    model_key = "Model" if lang == 'en' else "模型"
+    
     summary_data = []
     for file_name, file_results in all_results.items():
         for event_name, event_results in file_results.items():
             for r in event_results:
                 summary_data.append({
-                    "文件": file_name,
-                    "场次": event_name,
-                    "模型": r["model_name"],
+                    file_key: file_name,
+                    event_key: event_name,
+                    model_key: r["model_name"],
                     "NSE": r["nse"],
                     "RMSE": r["rmse"],
                     "PBIAS": f"{r['pbias']:.1f}%"
                 })
     
     if summary_data:
-        report_lines.extend([
-            "## 2. 逐场次洪水模拟结果",
-            "",
-        ])
+        if lang == 'en':
+            report_lines.extend(["## 2. Per-Event Flood Simulation Results", "", ""])
+        else:
+            report_lines.extend(["## 2. 逐场次洪水模拟结果", "", ""])
         
         summary_df = pd.DataFrame(summary_data)
         
         for file_name in all_results.keys():
             report_lines.append(f"### {file_name}")
-            file_data = summary_df[summary_df['文件'] == file_name]
+            file_data = summary_df[summary_df[file_key] == file_name]
             if not file_data.empty:
                 report_lines.append(file_data.to_markdown(index=False))
             report_lines.append("")
     
-    report_lines.extend([
-        "## 3. 模型参数",
-        "",
-    ])
+    if lang == 'en':
+        report_lines.extend(["## 3. Model Parameters", "", ""])
+    else:
+        report_lines.extend(["## 3. 模型参数", "", ""])
     
     for model_name, result in calibration_results.items():
         report_lines.append(f"### {model_name}")
@@ -283,7 +403,21 @@ def generate_calibration_report(
         summary_df = pd.DataFrame(summary_data)
         summary_md = summary_df.to_markdown(index=False)
         
-        llm_prompt = f"""你是一位资深水文专家。请基于以下多场次洪水率定结果，撰写一份专业的分析报告。
+        if lang == 'en':
+            llm_prompt = f"""You are a senior hydrological expert. Please write a professional analysis report based on the following multi-event flood calibration results.
+
+**Calibration Results Summary:**
+{summary_md}
+
+**Requirements:**
+1. Analyze each model's performance across different flood events
+2. Evaluate model stability and applicability
+3. Provide overall recommendations
+4. Use Markdown format
+5. Keep language concise and professional, highlight key conclusions
+"""
+        else:
+            llm_prompt = f"""你是一位资深水文专家。请基于以下多场次洪水率定结果，撰写一份专业的分析报告。
 
 **率定结果汇总：**
 {summary_md}
@@ -297,22 +431,23 @@ def generate_calibration_report(
 """
         stt = call_llm(llm_prompt)
         if not stt.startswith("[ERROR]"):
-            report_lines.extend([
-                "## 4. LLM智能分析",
-                "",
-                stt
-            ])
+            if lang == 'en':
+                report_lines.extend(["## 4. LLM Intelligent Analysis", "", stt])
+            else:
+                report_lines.extend(["## 4. LLM智能分析", "", stt])
         else:
-            report_lines.extend([
-                "## 4. 综合评价",
-                "",
-                "*LLM分析暂时不可用*"
-            ])
+            if lang == 'en':
+                report_lines.extend(["## 4. Overall Assessment", "", "*LLM analysis temporarily unavailable*"])
+            else:
+                report_lines.extend(["## 4. 综合评价", "", "*LLM分析暂时不可用*"])
     
     report_lines.append("")
     report_lines.append("---")
     report_lines.append("")
-    report_lines.append("*报告由 HydroTune-AI 系统自动生成*")
+    if lang == 'en':
+        report_lines.append("*Report auto-generated by HydroTune-AI*")
+    else:
+        report_lines.append("*报告由 HydroTune-AI 系统自动生成*")
     
     return "\n".join(report_lines)
 
@@ -324,18 +459,39 @@ def generate_comprehensive_report(
     call_llm=call_minimax
 ) -> str:
     """
-    生成综合分析报告（包含预分析和率定结果）
+    Generate comprehensive analysis report (pre-analysis + calibration results)
     """
-    report_lines = [
-        "# 水文模型率定综合分析报告",
-        "",
-        f"**生成时间**: {datetime.now().strftime('%Y-%m-%d')}",
-        f"**流域面积**: {preanalysis_result.area} km²",
-        f"**时间尺度**: {'小时' if preanalysis_result.timestep == 'hourly' else '日'}尺度",
-        "",
-        "---",
-        "",
-    ]
+    lang = get_language()
+    
+    if lang == 'en':
+        ts_label = 'hourly' if preanalysis_result.timestep == 'hourly' else 'daily'
+        report_lines = [
+            "# Comprehensive Hydrological Model Calibration Report",
+            "",
+            f"**Generated**: {datetime.now().strftime('%Y-%m-%d')}",
+            f"**Catchment Area**: {preanalysis_result.area} km²",
+            f"**Timestep**: {ts_label}",
+            "",
+            "---",
+            "",
+        ]
+        model_key = "Model"
+        calib_nse_key = "Calib NSE"
+        calib_rmse_key = "Calib RMSE"
+    else:
+        report_lines = [
+            "# 水文模型率定综合分析报告",
+            "",
+            f"**生成时间**: {datetime.now().strftime('%Y-%m-%d')}",
+            f"**流域面积**: {preanalysis_result.area} km²",
+            f"**时间尺度**: {'小时' if preanalysis_result.timestep == 'hourly' else '日'}尺度",
+            "",
+            "---",
+            "",
+        ]
+        model_key = "模型"
+        calib_nse_key = "率定NSE"
+        calib_rmse_key = "率定RMSE"
     
     if call_llm:
         summary_data = []
@@ -344,7 +500,7 @@ def generate_comprehensive_report(
             for event_name, event_results in file_results.items():
                 for r in event_results:
                     summary_data.append({
-                        "模型": r["model_name"],
+                        model_key: r["model_name"],
                         "NSE": round(r["nse"], 4),
                         "RMSE": round(r["rmse"], 2),
                         "PBIAS": r["pbias"]
@@ -352,12 +508,31 @@ def generate_comprehensive_report(
         
         for model_name, result in calibration_results.items():
             calib_data.append({
-                "模型": model_name,
-                "率定NSE": round(result['nse'], 4),
-                "率定RMSE": round(result['rmse'], 2)
+                model_key: model_name,
+                calib_nse_key: round(result['nse'], 4),
+                calib_rmse_key: round(result['rmse'], 2)
             })
         
-        llm_prompt = f"""你是一位资深水文专家。请基于以下水文模型率定结果，撰写一份精炼严谨的综合分析报告。
+        if lang == 'en':
+            llm_prompt = f"""You are a senior hydrological expert. Please write a concise and rigorous comprehensive analysis report based on the following hydrological model calibration results.
+
+## 1. Basic Information
+- Catchment Area: {preanalysis_result.area} km²
+- Flood Events Identified: {len(preanalysis_result.events)}
+- Representative Floods (Calibration): {len(preanalysis_result.selected_events)}
+- Data Quality: {preanalysis_result.quality.quality_level}
+
+## 2. Calibration Results
+| Model | Calib NSE | Calib RMSE |
+|-------|-----------|------------|
+""" + "\n".join([f"| {d[model_key]} | {d[calib_nse_key]} | {d[calib_rmse_key]} |" for d in calib_data]) + f"""
+
+## 3. Validation Results
+| Model | Avg NSE | Avg RMSE |
+|-------|---------|----------|
+"""
+        else:
+            llm_prompt = f"""你是一位资深水文专家。请基于以下水文模型率定结果，撰写一份精炼严谨的综合分析报告。
 
 ## 1. 基本信息
 - 流域面积: {preanalysis_result.area} km²
@@ -368,7 +543,7 @@ def generate_comprehensive_report(
 ## 2. 率定结果统计
 | 模型 | 率定NSE | 率定RMSE |
 |------|---------|----------|
-""" + "\n".join([f"| {d['模型']} | {d['率定NSE']} | {d['率定RMSE']} |" for d in calib_data]) + f"""
+""" + "\n".join([f"| {d[model_key]} | {d[calib_nse_key]} | {d[calib_rmse_key]} |" for d in calib_data]) + f"""
 
 ## 3. 验证结果
 | 模型 | 平均NSE | 平均RMSE |
@@ -377,7 +552,7 @@ def generate_comprehensive_report(
         
         model_stats = {}
         for d in summary_data:
-            m = d['模型']
+            m = d[model_key]
             if m not in model_stats:
                 model_stats[m] = {'nse': [], 'rmse': []}
             model_stats[m]['nse'].append(d['NSE'])
@@ -388,13 +563,31 @@ def generate_comprehensive_report(
             avg_rmse = sum(stats['rmse']) / len(stats['rmse'])
             llm_prompt += f"| {m} | {avg_nse:.4f} | {avg_rmse:.2f} |\n"
         
-        llm_prompt += f"""
+        if lang == 'en':
+            llm_prompt += f"""
+## 4. Representative Flood Selection
+"""
+            for e in preanalysis_result.selected_events[:5]:
+                llm_prompt += f"- {e.event_id}: Peak {e.peak_flow:.1f} m³/s ({e.selection_reason})\n"
+            
+            llm_prompt += f"""
+## 5. Deep Learning Integration Recommendations
+Please provide suggestions from the following perspectives:
+1. Limitations of current conceptual models (Tank, HBV, Xinanjiang)
+2. Feasibility of deep learning (LSTM, Transformer, Neural ODE, etc.) for improving hydrological simulation
+3. Model-data hybrid architecture recommendations (e.g., LSTM embedding, model error correction)
+4. Key input feature recommendations (weather forecasts, remote sensing ET, soil moisture, etc.)
+5. Technical implementation path and data requirements
+
+Write a professional, rigorous report within 1200 words, using Markdown format, highlighting key conclusions."""
+        else:
+            llm_prompt += f"""
 ## 4. 代表性洪水选取
 """
-        for e in preanalysis_result.selected_events[:5]:
-            llm_prompt += f"- {e.event_id}: 峰值{e.peak_flow:.1f}m³/s ({e.selection_reason})\n"
-        
-        llm_prompt += f"""
+            for e in preanalysis_result.selected_events[:5]:
+                llm_prompt += f"- {e.event_id}: 峰值{e.peak_flow:.1f}m³/s ({e.selection_reason})\n"
+            
+            llm_prompt += f"""
 ## 5. 深度学习耦合建议
 请从以下角度给出建议：
 1. 当前概念性模型（如Tank、HBV、新安江）的局限性
@@ -409,17 +602,18 @@ def generate_comprehensive_report(
         if not stt.startswith("[ERROR]"):
             report_lines.append(stt)
         else:
-            report_lines.extend([
-                "## 率定结果",
-                "",
-                "*LLM分析暂时不可用*",
-                ""
-            ])
+            if lang == 'en':
+                report_lines.extend(["## Calibration Results", "", "*LLM analysis temporarily unavailable*", ""])
+            else:
+                report_lines.extend(["## 率定结果", "", "*LLM分析暂时不可用*", ""])
     
     report_lines.append("")
     report_lines.append("---")
     report_lines.append("")
-    report_lines.append("*本报告由 HydroTune-AI 系统自动生成*")
+    if lang == 'en':
+        report_lines.append("*Report auto-generated by HydroTune-AI*")
+    else:
+        report_lines.append("*本报告由 HydroTune-AI 系统自动生成*")
     
     return "\n".join(report_lines)
 
@@ -433,57 +627,98 @@ def generate_multifile_report(
     xgb_correction_results: List[Dict] = None
 ) -> str:
     """
-    生成多文件模式分析报告（率定-验证分开）
-    
-    Args:
-        file_data_list: 文件数据列表
-        calibration_results: 率定结果
-        file_simulation_results: 各文件模拟结果，包含 is_calib 标记
-        call_llm: LLM调用函数
-        warmup_hours: 预热期小时数
-        
-    Returns:
-        Markdown格式的报告
+    Generate multi-file mode analysis report (calibration - validation split)
     """
-    report_lines = [
-        "# 水文模型率定验证分析报告（多文件模式）",
-        "",
-        f"**生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-        "",
-        "---",
-        "",
-        "## 1. 分析概述",
-        "",
-    ]
+    lang = get_language()
     
-    n_files = len(file_data_list)
-    n_models = len(calibration_results)
-    
-    report_lines.append(f"- **分析场次**: {n_files} 场洪水")
-    report_lines.append(f"- **率定模型**: {n_models} 个")
-    report_lines.append(f"- **率定策略**: 随机选取约1/3场次率定，其余2/3验证")
-    if warmup_hours > 0:
-        report_lines.append(f"- **预热期**: {warmup_hours} 小时（已从计算中剔除）")
+    if lang == 'en':
+        report_lines = [
+            "# Hydrological Model Calibration & Validation Report (Multi-File Mode)",
+            "",
+            f"**Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            "",
+            "---",
+            "",
+            "## 1. Analysis Overview",
+            "",
+        ]
+        n_files = len(file_data_list)
+        n_models = len(calibration_results)
+        report_lines.append(f"- **Events Analyzed**: {n_files} flood events")
+        report_lines.append(f"- **Calibration Models**: {n_models}")
+        report_lines.append(f"- **Strategy**: Randomly select ~1/3 events for calibration, remaining 2/3 for validation")
+        if warmup_hours > 0:
+            report_lines.append(f"- **Warm-up Period**: {warmup_hours} hours (excluded from calculation)")
+        else:
+            report_lines.append(f"- **Warm-up Period**: None")
+        report_lines.append("")
+        
+        calib_file_names = set()
+        valid_file_names = set()
+        for model_name, file_results in file_simulation_results.items():
+            for file_name, result in file_results.items():
+                if result.get('is_calib', False):
+                    calib_file_names.add(file_name)
+                else:
+                    valid_file_names.add(file_name)
+        
+        report_lines.extend([
+            "## 2. Event Grouping",
+            "",
+            f"- **Calibration Events** ({len(calib_file_names)}): {', '.join(sorted(calib_file_names))}",
+            f"- **Validation Events** ({len(valid_file_names)}): {', '.join(sorted(valid_file_names))}",
+            "",
+        ])
+        
+        file_key = "File"
+        type_key = "Type"
+        model_key = "Model"
+        calib_label = "Calibration"
+        valid_label = "Validation"
     else:
-        report_lines.append(f"- **预热期**: 无")
-    report_lines.append("")
-    
-    calib_file_names = set()
-    valid_file_names = set()
-    for model_name, file_results in file_simulation_results.items():
-        for file_name, result in file_results.items():
-            if result.get('is_calib', False):
-                calib_file_names.add(file_name)
-            else:
-                valid_file_names.add(file_name)
-    
-    report_lines.extend([
-        "## 2. 场次分组",
-        "",
-        f"- **率定场次** ({len(calib_file_names)}场): {', '.join(sorted(calib_file_names))}",
-        f"- **验证场次** ({len(valid_file_names)}场): {', '.join(sorted(valid_file_names))}",
-        "",
-    ])
+        report_lines = [
+            "# 水文模型率定验证分析报告（多文件模式）",
+            "",
+            f"**生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            "",
+            "---",
+            "",
+            "## 1. 分析概述",
+            "",
+        ]
+        n_files = len(file_data_list)
+        n_models = len(calibration_results)
+        report_lines.append(f"- **分析场次**: {n_files} 场洪水")
+        report_lines.append(f"- **率定模型**: {n_models} 个")
+        report_lines.append(f"- **率定策略**: 随机选取约1/3场次率定，其余2/3验证")
+        if warmup_hours > 0:
+            report_lines.append(f"- **预热期**: {warmup_hours} 小时（已从计算中剔除）")
+        else:
+            report_lines.append(f"- **预热期**: 无")
+        report_lines.append("")
+        
+        calib_file_names = set()
+        valid_file_names = set()
+        for model_name, file_results in file_simulation_results.items():
+            for file_name, result in file_results.items():
+                if result.get('is_calib', False):
+                    calib_file_names.add(file_name)
+                else:
+                    valid_file_names.add(file_name)
+        
+        report_lines.extend([
+            "## 2. 场次分组",
+            "",
+            f"- **率定场次** ({len(calib_file_names)}场): {', '.join(sorted(calib_file_names))}",
+            f"- **验证场次** ({len(valid_file_names)}场): {', '.join(sorted(valid_file_names))}",
+            "",
+        ])
+        
+        file_key = "文件"
+        type_key = "类型"
+        model_key = "模型"
+        calib_label = "率定"
+        valid_label = "验证"
     
     if call_llm:
         table_data = []
@@ -491,9 +726,9 @@ def generate_multifile_report(
             for file_name, result in file_results.items():
                 is_calib = result.get('is_calib', False)
                 table_data.append({
-                    "文件": file_name,
-                    "类型": "率定" if is_calib else "验证",
-                    "模型": model_name,
+                    file_key: file_name,
+                    type_key: calib_label if is_calib else valid_label,
+                    model_key: model_name,
                     "NSE": round(result['nse'], 4),
                     "RMSE": round(result['rmse'], 2),
                     "PBIAS(%)": round(result['pbias'], 1)
@@ -518,7 +753,50 @@ def generate_multifile_report(
                 'valid_n': len(valid_nses),
             }
         
-        llm_prompt = f"""你是一位资深水文专家。请基于以下多场次洪水模型率定验证结果，撰写一份专业的分析报告。
+        if lang == 'en':
+            llm_prompt = f"""You are a senior hydrological expert. Please write a professional analysis report based on the following multi-event flood model calibration and validation results.
+
+## 1. Event Grouping
+- Calibration Events: {len(calib_file_names)} - {', '.join(sorted(calib_file_names))}
+- Validation Events: {len(valid_file_names)} - {', '.join(sorted(valid_file_names))}
+
+## 2. Per-Event Simulation Results
+| File | Type | Model | NSE | RMSE | PBIAS(%) |
+|------|------|-------|-----|------|----------|
+"""
+            for d in table_data:
+                llm_prompt += f"| {d[file_key]} | {d[type_key]} | {d[model_key]} | {d['NSE']:.4f} | {d['RMSE']:.2f} | {d['PBIAS(%)']:.1f} |\n"
+            
+            llm_prompt += f"""
+## 3. Model Performance Statistics
+| Model | Calib NSE (Mean) | Calib NSE (Std) | Valid NSE (Mean) | Valid NSE (Std) |
+|-------|-----------------|-----------------|-----------------|-----------------|
+"""
+            for model_name, stats in model_stats.items():
+                llm_prompt += f"| {model_name} | {stats['calib_nse_avg']:.4f} | {stats['calib_nse_std']:.4f} | {stats['valid_nse_avg']:.4f} | {stats['valid_nse_std']:.4f} |\n"
+            
+            llm_prompt += f"""
+## 4. Calibration Parameters
+"""
+            for model_name, calib_result in calibration_results.items():
+                llm_prompt += f"\n### {model_name}\n"
+                llm_prompt += f"- Calib NSE: {calib_result['nse']:.4f}\n"
+                params = calib_result['params']
+                for k, v in list(params.items())[:8]:
+                    llm_prompt += f"- {k}: {v:.4f}\n"
+            
+            llm_prompt += """
+## 5. Analysis Requirements
+Please write the report from the following perspectives (within 1200 words):
+
+1. **Model Generalization Assessment**: Compare calibration and validation NSE to determine overfitting
+2. **Model Stability Analysis**: Compare coefficient of variation of NSE across events
+3. **Best Model Recommendation**: Recommend the most suitable model based on overall performance
+4. **Improvement Suggestions**: If overfitting or poor performance exists, propose improvement directions
+
+Use professional and rigorous language, highlighting key conclusions."""
+        else:
+            llm_prompt = f"""你是一位资深水文专家。请基于以下多场次洪水模型率定验证结果，撰写一份专业的分析报告。
 
 ## 1. 场次分组
 - 率定场次: {len(calib_file_names)}场 - {', '.join(sorted(calib_file_names))}
@@ -528,28 +806,28 @@ def generate_multifile_report(
 | 文件 | 类型 | 模型 | NSE | RMSE | PBIAS(%) |
 |------|------|------|-----|------|-----------|
 """
-        for d in table_data:
-            llm_prompt += f"| {d['文件']} | {d['类型']} | {d['模型']} | {d['NSE']:.4f} | {d['RMSE']:.2f} | {d['PBIAS(%)']:.1f} |\n"
-        
-        llm_prompt += f"""
+            for d in table_data:
+                llm_prompt += f"| {d[file_key]} | {d[type_key]} | {d[model_key]} | {d['NSE']:.4f} | {d['RMSE']:.2f} | {d['PBIAS(%)']:.1f} |\n"
+            
+            llm_prompt += f"""
 ## 3. 模型表现统计
 | 模型 | 率定NSE(均) | 率定NSE(标) | 验证NSE(均) | 验证NSE(标) |
 |------|------------|------------|------------|------------|
 """
-        for model_name, stats in model_stats.items():
-            llm_prompt += f"| {model_name} | {stats['calib_nse_avg']:.4f} | {stats['calib_nse_std']:.4f} | {stats['valid_nse_avg']:.4f} | {stats['valid_nse_std']:.4f} |\n"
-        
-        llm_prompt += f"""
+            for model_name, stats in model_stats.items():
+                llm_prompt += f"| {model_name} | {stats['calib_nse_avg']:.4f} | {stats['calib_nse_std']:.4f} | {stats['valid_nse_avg']:.4f} | {stats['valid_nse_std']:.4f} |\n"
+            
+            llm_prompt += f"""
 ## 4. 率定参数
 """
-        for model_name, calib_result in calibration_results.items():
-            llm_prompt += f"\n### {model_name}\n"
-            llm_prompt += f"- 率定NSE: {calib_result['nse']:.4f}\n"
-            params = calib_result['params']
-            for k, v in list(params.items())[:8]:
-                llm_prompt += f"- {k}: {v:.4f}\n"
-        
-        llm_prompt += """
+            for model_name, calib_result in calibration_results.items():
+                llm_prompt += f"\n### {model_name}\n"
+                llm_prompt += f"- 率定NSE: {calib_result['nse']:.4f}\n"
+                params = calib_result['params']
+                for k, v in list(params.items())[:8]:
+                    llm_prompt += f"- {k}: {v:.4f}\n"
+            
+            llm_prompt += """
 ## 5. 分析要求
 请从以下角度撰写报告（控制在800字以内）：
 
@@ -562,35 +840,55 @@ def generate_multifile_report(
 
         stt = call_llm(llm_prompt)
         if not stt.startswith("[ERROR]"):
-            report_lines.append("## 6. LLM 智能分析")
+            if lang == 'en':
+                report_lines.append("## 6. LLM Intelligent Analysis")
+            else:
+                report_lines.append("## 6. LLM 智能分析")
             report_lines.append("")
             report_lines.append(stt)
         else:
-            report_lines.extend([
-                "## 6. 模型性能小结",
-                "",
-                "*LLM分析暂时不可用，基于数据生成小结如下：*",
-                "",
-            ])
+            if lang == 'en':
+                report_lines.extend([
+                    "## 6. Model Performance Summary",
+                    "",
+                    "*LLM analysis temporarily unavailable. Summary based on data:*",
+                    "",
+                ])
+            else:
+                report_lines.extend([
+                    "## 6. 模型性能小结",
+                    "",
+                    "*LLM分析暂时不可用，基于数据生成小结如下：*",
+                    "",
+                ])
             
             for model_name, stats in model_stats.items():
                 report_lines.append(f"**{model_name}**:")
-                report_lines.append(f"- 率定期平均NSE: {stats['calib_nse_avg']:.4f} (±{stats['calib_nse_std']:.4f})")
-                report_lines.append(f"- 验证期平均NSE: {stats['valid_nse_avg']:.4f} (±{stats['valid_nse_std']:.4f})")
-                
-                diff = stats['valid_nse_avg'] - stats['calib_nse_avg']
-                if diff < -0.1:
-                    report_lines.append("- ⚠️ 验证期表现明显下降，存在过拟合风险")
-                elif diff > 0.1:
-                    report_lines.append("- ✓ 验证期表现优于率定期，泛化能力较强")
+                if lang == 'en':
+                    report_lines.append(f"- Calibration Avg NSE: {stats['calib_nse_avg']:.4f} (±{stats['calib_nse_std']:.4f})")
+                    report_lines.append(f"- Validation Avg NSE: {stats['valid_nse_avg']:.4f} (±{stats['valid_nse_std']:.4f})")
+                    diff = stats['valid_nse_avg'] - stats['calib_nse_avg']
+                    if diff < -0.1:
+                        report_lines.append("- ⚠️ Validation performance significantly lower, potential overfitting")
+                    elif diff > 0.1:
+                        report_lines.append("- ✓ Validation outperforms calibration, strong generalization")
+                    else:
+                        report_lines.append("- ✓ Consistent performance across calibration and validation, stable model")
                 else:
-                    report_lines.append("- ✓ 率定和验证表现一致，模型稳定")
+                    report_lines.append(f"- 率定期平均NSE: {stats['calib_nse_avg']:.4f} (±{stats['calib_nse_std']:.4f})")
+                    report_lines.append(f"- 验证期平均NSE: {stats['valid_nse_avg']:.4f} (±{stats['valid_nse_std']:.4f})")
+                    diff = stats['valid_nse_avg'] - stats['calib_nse_avg']
+                    if diff < -0.1:
+                        report_lines.append("- ⚠️ 验证期表现明显下降，存在过拟合风险")
+                    elif diff > 0.1:
+                        report_lines.append("- ✓ 验证期表现优于率定期，泛化能力较强")
+                    else:
+                        report_lines.append("- ✓ 率定和验证表现一致，模型稳定")
                 report_lines.append("")
     
-    report_lines.extend([
-        "---",
-        "",
-        "*本报告由 HydroTune-AI 系统自动生成*",
-    ])
+    if lang == 'en':
+        report_lines.extend(["---", "", "*Report auto-generated by HydroTune-AI*"])
+    else:
+        report_lines.extend(["---", "", "*本报告由 HydroTune-AI 系统自动生成*"])
     
     return "\n".join(report_lines)
