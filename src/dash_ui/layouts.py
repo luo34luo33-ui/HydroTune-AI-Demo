@@ -94,21 +94,26 @@ def sidebar():
 
 
 def layout():
-    descriptions = ['识别数据质量、洪水特征与流域空间信息。','运行真实率定与模拟，比较模型性能。','融合多模型结果，开展误差校正。','基于计算证据生成诊断与优化建议。']
+    descriptions = ['洪水统计、智能预分析、流域概况。','模型率定、模拟评价、多模型比较。','BMA 融合、XGB 误差校正、多模型对比。','模型性能分析、LLM 智能诊断及优化建议。']
     return html.Div([
         dcc.Location(id='url',refresh=False),dcc.Interval(id='poll',interval=1000),
         dcc.Store(id='render-key'),dcc.Store(id='file-list-key'),dcc.Store(id='had-confirmed',storage_type='session'),
         dcc.Download(id='download-report'),dcc.Download(id='download-chart'),dcc.Download(id='download-corrected'),
         html.Header([dcc.Link([html.Strong('HydroTune'),html.Span('：大语言模型智能体水文平台')],href='/',className='brand'),
                      html.Div(TAGLINE,className='tagline'),
-                     html.Div([dcc.Link('返回首页',href='/',className='home-link'),html.Span(id='top-status',className='status-chip')],className='header-right')],className='topbar'),
+                     html.Div([dcc.Link('进入工作台 →',href='/workspace?module=data',className='workbench-link'),dcc.Link('返回首页',href='/',className='home-link'),html.Span(id='top-status',className='status-chip')],className='header-right')],className='topbar'),
         html.Main([
-            html.Section([html.Span('HYDROLOGY · MODELLING · INTELLIGENCE',className='eyebrow'),
-                          html.H1('HydroTune'),html.H2('大语言模型智能体水文平台'),
-                          html.P(TAGLINE,className='hero-subtitle'),
-                          dcc.Link('开始使用 →',href='/workspace?module=data',className='primary hero-button')],className='landing-hero'),
+            html.Section([
+                html.Div([html.Span('HYDROLOGY · AI · SCIENTIFIC WORKSPACE',className='eyebrow'),
+                          html.H1('HydroTune'),html.H2('让水文建模更智能、更高效'),
+                          html.P('集成水文数据预分析、模型率定与模拟、多模型后处理及 LLM 智能诊断，为水文研究提供连贯、高效的建模工作台。',className='hero-subtitle'),
+                          dcc.Link('开始使用 →',href='/workspace?module=data',className='primary hero-button'),
+                          html.Span('从数据到科学洞察',className='hero-caption')],className='hero-copy'),
+                html.Figure([html.Img(src='/assets/landing-cover.svg',alt='数字流域示意：立体地形、等高线与河网',className='hero-cover'),
+                             html.Figcaption('数字流域概念示意 · 非实际流域数据')],className='hero-visual')
+            ],className='landing-hero'),
             html.Div([html.Div([html.Span('科研工作台',className='eyebrow'),html.H2('连接数据、模型与科学洞察')]),html.P('四个工作模块，一条清晰的研究路径。',className='hint')],className='section-heading'),
-            html.Div([dcc.Link([html.Span(f'0{i+1}',className='feature-number'),html.H3(label),html.P(descriptions[i]),html.Span('进入模块 ↗',className='feature-link')],
+            html.Div([dcc.Link([html.Span(className='feature-icon icon-'+key,**{'aria-hidden':'true'}),html.H3(label),html.P(descriptions[i]),html.Span('进入模块 ↗',className='feature-link')],
                               href='/workspace?module='+key,className='feature-card') for i,(key,label) in enumerate(MODULES.items())],className='feature-grid'),
             html.Footer('HydroTune · 以真实计算支持水文科研决策',className='landing-footer')
         ],id='landing',className='landing'),

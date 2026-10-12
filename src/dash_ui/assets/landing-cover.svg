@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="520" viewBox="0 0 720 520">
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#092B4C"/><stop offset="1" stop-color="#075B70"/></linearGradient>
+    <linearGradient id="land" x2="0.8" y2="1"><stop stop-color="#61B9B8"/><stop offset="1" stop-color="#124D68"/></linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#7BCCCF" stroke-opacity=".1"/></pattern>
+    <clipPath id="basin"><path d="M82 283L137 208L196 194L239 126L298 150L345 104L393 136L458 128L501 184L570 203L638 286L600 334L524 350L466 399L397 382L340 414L283 379L216 383L171 337L115 329Z"/></clipPath>
+  </defs>
+  <rect width="720" height="520" rx="20" fill="url(#bg)"/>
+  <rect width="720" height="520" rx="20" fill="url(#grid)"/>
+  <g font-family="Arial,sans-serif" fill="#B6DFE2"><text x="36" y="44" font-size="11" letter-spacing="3">DIGITAL WATERSHED</text><text x="36" y="64" font-size="9" letter-spacing="1.5" opacity=".65">TERRAIN / RIVER NETWORK / MODELLING</text></g>
+  <ellipse cx="360" cy="386" rx="260" ry="58" fill="#031D32" opacity=".25"/>
+  <path d="M82 283V312L115 358L171 366L216 412L283 408L340 443L397 411L466 428L524 379L600 363L638 315V286L600 334L524 350L466 399L397 382L340 414L283 379L216 383L171 337L115 329Z" fill="#103A52" stroke="#58A6AE" stroke-opacity=".4"/>
+  <path d="M82 283L137 208L196 194L239 126L298 150L345 104L393 136L458 128L501 184L570 203L638 286L600 334L524 350L466 399L397 382L340 414L283 379L216 383L171 337L115 329Z" fill="url(#land)" stroke="#8DD2CB" stroke-width="1.5"/>
+  <g clip-path="url(#basin)" fill="none" stroke="#B3E4D8" stroke-width="1" opacity=".45">
+    <path d="M64 259Q126 173 191 230T305 209T423 198T570 241T675 269M71 274Q135 187 198 245T316 224T431 213T578 257T671 284M75 291Q143 201 207 260T326 240T442 230T585 273T663 301M80 308Q153 215 217 276T338 257T452 247T589 290T658 318M89 325Q164 231 229 293T350 275T463 264T594 308T650 335M100 342Q176 247 241 310T362 293T475 281T598 326T642 352M113 359Q187 265 253 328T375 312T488 300T602 344T632 370"/>
+    <path d="M167 213Q199 132 249 167T334 163T419 154T492 185M180 218Q208 149 249 180T333 178T418 169T489 199M196 223Q216 167 251 194T333 193T416 185T483 214M218 227Q232 187 260 209T333 209T411 202T474 230"/>
+  </g>
+  <g fill="none" stroke="#71F0E3" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M346 154L331 192L351 223L328 257L356 288L344 322L377 352L397 382" stroke-width="4"/>
+    <path d="M225 202L250 234L292 245L328 257M181 278L221 280L266 304L344 322M465 194L434 225L399 236L356 288M546 266L491 280L464 316L377 352" stroke-width="2.4"/>
+    <path d="M268 176L274 214L292 245M404 169L408 205L399 236M154 247L188 256L221 280M566 309L510 319L464 316" stroke-width="1.3"/>
+  </g>
+  <g fill="#D5FFF7" stroke="#08A6AD" stroke-width="3"><circle cx="328" cy="257" r="5"/><circle cx="344" cy="322" r="5"/><circle cx="397" cy="382" r="6"/></g>
+  <g stroke="#B4DCDD" fill="none" opacity=".55"><path d="M397 382L454 443H569M328 257L276 113H173"/><circle cx="569" cy="443" r="2"/><path d="M649 91V125M632 108H666"/></g>
+  <g fill="#B6DFE2" font-family="Arial,sans-serif" font-size="9" letter-spacing="1.5"><text x="458" y="459">BASIN OUTLET</text><text x="70" y="103">HYDROLOGICAL RESPONSE</text><text x="36" y="487" opacity=".65">HYDROTUNE / CONCEPT VISUAL</text></g>
+</svg>

@@ -147,22 +147,23 @@ def test_pending_upload_does_not_invalidate_confirmed_results(config):
         assert state['stale_data']
 
 
-def test_dash_routes_and_callback_navigation_do_not_start_jobs():
+@pytest.mark.parametrize('module',['data','simulation','post','report'])
+def test_dash_routes_and_callback_navigation_do_not_start_jobs(module):
     app=create_app()
     client=app.server.test_client()
     assert client.get('/').status_code==200
-    assert client.get('/workspace?module=post').status_code==200
+    assert client.get('/workspace?module='+module).status_code==200
     assert client.get('/_dash-layout').status_code==200
     key=next(k for k in app.callback_map if 'landing.style' in k)
     outputs=[{'id':id_,'property':prop} for id_,prop in [('landing','style'),('workspace','style'),('module-tabs','value'),('url','search')]]
     with patch.object(tasks,'submit',side_effect=AssertionError('navigation submitted work')):
         response=client.post('/_dash-update-component',json={'output':key,'outputs':outputs,
             'inputs':[{'id':'url','property':'pathname','value':'/workspace'},
-                      {'id':'url','property':'search','value':'?module=post'},
+                      {'id':'url','property':'search','value':'?module='+module},
                       {'id':'module-tabs','property':'value','value':'data'}],
             'state':[],'changedPropIds':['url.search']})
     assert response.status_code==200
-    assert response.json['response']['module-tabs']['value']=='post'
+    assert response.json['response']['module-tabs']['value']==module
 
 
 def test_form_selects_active_algorithm_and_rejects_bad_numbers():
