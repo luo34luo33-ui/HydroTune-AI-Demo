@@ -1,0 +1,12 @@
+:root{font-family:Inter,"Microsoft YaHei",system-ui,sans-serif;color:#14324b;background:#f2f7fa}
+*{box-sizing:border-box}body{margin:0}button,input,textarea{font:inherit}
+.topbar{background:#102a43;color:white;padding:18px max(24px,calc((100vw - 1240px)/2));display:flex;align-items:center;gap:24px}
+.brand{font-size:24px;font-weight:800}.tagline{color:#b8d4e6}.container{max-width:1240px;margin:auto;padding:25px 22px 60px}
+.hero{background:linear-gradient(120deg,#103557,#087e8b);color:white;padding:28px 36px;border-radius:20px;margin-bottom:25px}
+.hero h1{margin:0 0 8px}.hero p{margin:0;color:#e4f3f7}.card{background:white;border:1px solid #dce7ef;border-radius:16px;padding:28px;margin-top:20px;box-shadow:0 7px 25px #14324b0c}
+.page{min-height:350px}.card h2{margin-top:0}.field-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:16px;margin:18px 0}.field{display:flex;flex-direction:column;gap:7px}.field-label{font-weight:650}
+input:not([type=checkbox]),textarea{border:1px solid #b9cbd7;border-radius:8px;padding:10px;min-height:41px;width:100%}.upload-box{border:2px dashed #89b9c7;border-radius:12px;padding:28px;text-align:center;cursor:pointer;background:#f8fcfd}
+.upload-box:hover{border-color:#087e8b}.hint{color:#60788c}.primary,button{border:0;border-radius:9px;background:#087e8b;color:white;padding:11px 17px;margin:8px 8px 8px 0;cursor:pointer}.primary:hover,button:hover{background:#065b66}
+details{padding:17px 0;border-top:1px solid #e1ebef}summary{font-weight:700;cursor:pointer}.status{margin:18px 0;font-weight:650}progress{width:100%;height:16px;accent-color:#087e8b}
+.metric-strip{display:flex;flex-wrap:wrap;gap:18px;background:#e9f5f6;border-radius:10px;padding:15px;margin:15px 0}.metric-strip span{display:inline-block}.table-scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;margin:12px 0 24px}th,td{text-align:left;padding:9px;border-bottom:1px solid #e4ebef;white-space:nowrap}th{background:#f0f6f9}.warnings{color:#a24818}.model-card{padding:15px;border-bottom:1px solid #e1ebef}.button-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:20px}
+@media(max-width:650px){.topbar{display:block}.tagline{margin-top:5px}.container{padding:15px}.hero{padding:20px}.card{padding:18px}}

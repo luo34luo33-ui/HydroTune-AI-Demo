@@ -2,6 +2,8 @@
 import os
 import re
 import requests
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 try:
     from dotenv import load_dotenv
@@ -35,6 +37,17 @@ def _session_state():
 
 
 _LANGUAGE = 'zh'
+_explicit_settings = ContextVar('hydrotune_llm_settings', default=None)
+
+
+@contextmanager
+def llm_settings(settings):
+    """Use visitor-local LLM settings outside a Streamlit script context."""
+    token = _explicit_settings.set(settings)
+    try:
+        yield
+    finally:
+        _explicit_settings.reset(token)
 
 
 def get_language() -> str:
@@ -56,7 +69,9 @@ DEFAULT_MINIMAX_MODEL = "MiniMax-M2.7"
 
 def get_llm_config():
     state = _session_state()
-    settings = state.get("llm_settings", {}) if state is not None else {}
+    settings = _explicit_settings.get()
+    if settings is None:
+        settings = state.get("llm_settings", {}) if state is not None else {}
     return {
         "provider": settings.get("provider", _get_secret("LLM_PROVIDER", "auto")).lower(),
         "api_key": settings.get("api_key") or _get_secret("MINIMAX_API_KEY"),
@@ -138,7 +153,8 @@ def call_minimax(prompt: str, system_prompt: str = "") -> str:
     config = get_llm_config()
     if config["provider"] not in ("auto", "minimax", "deepseek"):
         return _error("LLM", "LLM_PROVIDER 必须是 auto、minimax 或 deepseek / invalid provider")
-    ds_key = _get_secret("DEEPSEEK_API_KEY")
+    explicit = _explicit_settings.get() or {}
+    ds_key = (explicit.get("api_key") if config["provider"] == "deepseek" else None) or _get_secret("DEEPSEEK_API_KEY")
     if config["provider"] == "deepseek" or (config["provider"] == "auto" and ds_key):
         if not ds_key:
             return _error("DeepSeek", "DEEPSEEK_API_KEY 未配置 / not configured")
