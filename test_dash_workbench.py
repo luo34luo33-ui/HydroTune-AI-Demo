@@ -46,6 +46,21 @@ def test_confirmation_only_computes_preanalysis(files,config):
     assert prepared['preanalysis_report']==''
 
 
+def test_process_chart_uses_real_dates_and_preserves_missing_time_fallback(files,config):
+    prepared=analysis.preprocess(files,config)
+    figure=prepared['charts'][0]['figure']
+    assert figure['layout']['xaxis']['type']=='date'
+    assert figure['layout']['xaxis']['nticks']==7
+    assert pd.Timestamp(figure['data'][0]['x'][1])-pd.Timestamp(figure['data'][0]['x'][0])==pd.Timedelta(days=1)
+    event=prepared['events'][0]
+    hourly={**event,'dates':pd.Series(pd.date_range('2020-01-01',periods=32,freq='h'))}
+    chart=analysis._chart(hourly,{},'hourly',0)
+    assert pd.Timestamp(chart['data'][0]['x'][1])-pd.Timestamp(chart['data'][0]['x'][0])==pd.Timedelta(hours=1)
+    fallback=analysis._chart({**event,'dates':pd.Series([None]*32)}, {},'missing',0)
+    assert fallback['layout']['xaxis']['type']=='linear'
+    assert fallback['layout']['xaxis']['title']['text']=='记录序号'
+
+
 def test_raw_missingness_survives_existing_zero_fill(files,config):
     frame=pd.read_csv(BytesIO(files[0][1]))
     frame.loc[2,'flow']=np.nan

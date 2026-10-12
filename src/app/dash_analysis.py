@@ -86,7 +86,8 @@ def _metric_row(name, file_name, category, observed, simulated, warmup):
 def _chart(event, simulations, title, warmup):
     start = warmup if 0 < warmup < len(event['flow']) else 0
     dates = pd.to_datetime(event['dates'], errors='coerce')
-    axis = event['dates'] if dates.notna().all() else pd.Series(range(len(event['flow'])))
+    dated = dates.notna().all()
+    axis = dates if dated else pd.Series(range(len(event['flow'])))
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=axis[start:], y=event['flow'][start:], name='实测流量', line={'color': '#102a43', 'width': 3}))
     for model_name, values in simulations.items():
@@ -94,7 +95,15 @@ def _chart(event, simulations, title, warmup):
     fig.add_trace(go.Bar(x=axis[start:], y=event['precip'][start:], name='降水', yaxis='y2', opacity=.3,
                          marker_color='#38bdf8'))
     fig.update_layout(title=title, template='plotly_white', hovermode='x unified',
-                      xaxis_title='时间' if dates.notna().all() else '记录序号',
+                      xaxis={'title':'时间' if dated else '记录序号',
+                             'type':'date' if dated else 'linear', 'tickmode':'auto', 'nticks':7,
+                             'tickangle':0,'automargin':True,'tickfont':{'size':11,'color':'#64748B'},
+                             'gridcolor':'#EDF2F7',
+                             **({'hoverformat':'%Y-%m-%d %H:%M', 'tickformatstops':[
+                                 {'dtickrange':[None,86400000],'value':'%H:%M\n%m-%d'},
+                                 {'dtickrange':[86400000,'M1'],'value':'%m-%d\n%Y'},
+                                 {'dtickrange':['M1','M12'],'value':'%Y-%m'},
+                                 {'dtickrange':['M12',None],'value':'%Y'}]} if dated else {})},
                       yaxis={'title': '流量 (m³/s)'},
                       yaxis2={'title': '降水 (mm/步)', 'overlaying': 'y', 'side': 'right',
                               'autorange': 'reversed'}, legend={'orientation': 'h'}, autosize=True, margin={'l':55,'r':55,'t':55,'b':45}, font={'family':'Arial, Microsoft YaHei','color':'#172B4D'})
