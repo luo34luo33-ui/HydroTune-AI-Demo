@@ -13,7 +13,7 @@ Streamlit 仍使用 `streamlit run app.py` 或 `app_EN.py`，安装原 `requirem
 
 ## 使用流程
 
-1. 在侧栏设置上传模式、面积、时间尺度及字段映射。小时尺度下选择 `HBV Simple Model`，取消仅支持日尺度的 `HBV Model`。
+1. 在侧栏设置上传模式、面积、时间尺度及字段映射。HBV 模型统一支持日尺度与小时尺度。
 2. 选择 CSV、XLSX 或 XLS 水文文件。空间数据使用一套含 `.shp/.shx/.dbf/.prj` 的 ZIP 流域边界，可追加 GeoTIFF DEM；只上传边界也可绘图。
 3. 参数导入模式下，选择相应模型参数 CSV。文件先暂存，可逐个移除；同名水文文件及同类边界、DEM 会替换暂存文件。
 4. 点击“确认并分析”，解析水文与空间文件。缺少空间数据不会影响水文预分析；空间解析错误单独显示。
@@ -49,11 +49,11 @@ Streamlit 仍使用 `streamlit run app.py` 或 `app_EN.py`，安装原 `requirem
 
 ## 验证
 
-### HBV 简化版
+### HBV 模型
 
-工作台新增独立的 `HBV Simple Model`，复用仓库中已有的 `HBVLikeModel` 五参数实现（土壤水分、快慢双库，无积雪模块）。支持自动率定、参数 CSV 导入、预热期评价及 BMA / XGB 流程。参数列为 `fc,beta,k0,k1,lp`，边界沿用既有实现；流量按日尺度 86400 秒、小时尺度 3600 秒换算为 m³/s，降水和蒸发均为 mm/步。
+平台仅注册一个 `HBV Model`（HBV 模型），复用仓库中已有的 `HBVLikeModel` 五参数实现（土壤水分、快慢双库，无积雪模块），模型名称与介绍统一为 HBV。支持自动率定、参数 CSV 导入、预热期评价及 BMA / XGB 流程。参数列为 `fc,beta,k0,k1,lp`，边界沿用既有实现；流量按日尺度 86400 秒、小时尺度 3600 秒换算为 m³/s，降水和蒸发均为 mm/步。
 
-`k0`、`k1` 为每计算步出流比例，切换时间尺度后应重新率定或导入对应尺度参数，不自动转换日尺度参数。原 `HBV Model` 九参数模型及 Streamlit 默认模型组合保持原样，两种 HBV 的参数文件不能混用。
+`k0`、`k1` 为每计算步出流比例，切换时间尺度后应重新率定或导入对应尺度参数，不自动转换日尺度参数。原九参数实现不再注册为平台模型。HBV 参数导入使用上述五列；Streamlit 入口和部署方式保持不变，默认模型组合中的 HBV 使用统一实现。
 
 ```powershell
 python -m pytest test_hbv_simple.py test_dash_workbench.py test_dash_features.py -q
@@ -69,7 +69,7 @@ python -m unittest test_llm_settings test_routing_parameters test_cloud_plotting
 - 本地 GIS 库存在 GDAL 数据路径和 Shapely 弃用警告，相关空间测试仍通过。沙箱环境曾出现临时目录清理权限提示，未影响测试断言。
 - LLM 成功与失败路径使用受控测试验证；未使用用户密钥发起付费的真实报告生成。
 
-HBV 简化版接入验证：新增 4 项检查，覆盖小时流量换算、小时尺度真实 PSO 率定、参数导入、预热期评价和原九参数模型保留；表单检查同时覆盖两种 HBV 的尺度适用性。Dash / HBV 测试共 32 项通过，原相关回归 33 项通过。
+HBV 接入验证：新增 4 项检查，覆盖小时流量换算、小时尺度真实 PSO 率定、参数导入、预热期评价和唯一 HBV 注册；表单检查覆盖 HBV 的小时尺度适用性。Dash / HBV 测试共 32 项通过，原相关回归 33 项通过。
 
 ## 当前限制与后续事项
 

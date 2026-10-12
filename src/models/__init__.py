@@ -2,7 +2,7 @@
 from .base_model import BaseModel
 from .registry import ModelRegistry
 
-# 保留既有模型名称及参数；五参数 HBV 作为独立模型提供。
+# 平台统一使用支持日与小时尺度的五参数 HBV。
 
 import traceback
 
@@ -15,10 +15,10 @@ except Exception as e:
     print(f"[HydroTune-AI] Tank Model registration failed: {e}")
     traceback.print_exc()
 
-# 注册HBV模型 (完整版，需日尺度)
+# 注册平台唯一的 HBV 模型（日与小时尺度）
 try:
-    from .model_hbv import HBVModelAdapter
-    ModelRegistry.register(HBVModelAdapter())
+    from .model_hbv_simple import HBVSimpleModel
+    ModelRegistry.register(HBVSimpleModel())
     print("[HydroTune-AI] HBV Model registered")
 except Exception as e:
     print(f"[HydroTune-AI] HBV Model registration failed: {e}")
@@ -32,7 +32,3 @@ try:
 except Exception as e:
     print(f"[HydroTune-AI] XAJ Model registration failed: {e}")
     traceback.print_exc()
-
-# 接入已有五参数 HBV，日/小时尺度均按实际计算步换算流量。
-from .model_hbv_simple import HBVSimpleModel
-ModelRegistry.register(HBVSimpleModel())

@@ -18,7 +18,7 @@ from src.models.registry import ModelRegistry
 
 
 MODELS = ('HBV Model', 'XAJ Model', 'Tank Model')
-COLORS = {'HBV Model': '#08A6AD', 'HBV Simple Model': '#209477', 'XAJ Model': '#5178B8', 'Tank Model': '#D97706', 'BMA集成': '#845EC2'}
+COLORS = {'HBV Model': '#08A6AD', 'XAJ Model': '#5178B8', 'Tank Model': '#D97706', 'BMA集成': '#845EC2'}
 UPLOAD_MODES = ('单文件（一场洪水）', '单文件（连续序列）', '多文件（每文件一场洪水）')
 
 

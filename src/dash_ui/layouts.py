@@ -87,8 +87,8 @@ def sidebar():
             dcc.Checklist(id='models',options=[{'label':html.Div([html.Strong(name),html.Small(
                 (model.__doc__ or model.model_type).strip().splitlines()[0].split(' - ')[0][:70]),
                 html.Small('支持小时与日尺度' if model.supports_hourly else '仅支持日尺度')],className='model-option'),'value':name} for name,model in models.items()],
-                value=list(models),persistence=True,persistence_type='session'),
-            html.P('小时尺度请选择 HBV Simple Model，并取消仅支持日尺度的 HBV Model。简化版含土壤水分与双库响应，无积雪模块；k0、k1 为每步出流比例，切换尺度后应重新率定，不能直接套用日尺度参数。',className='hint'),
+                value=list(models),persistence='hbv',persistence_type='session'),
+            html.P('HBV 是源于瑞典的概念性水文模型，通过土壤水分、蒸散发、径流生成和快慢水库响应模拟流域降雨径流过程，支持日尺度与小时尺度。',className='hint'),
         ],True),
         html.Div(id='config-note',className='hint',role='status'),
     ],className='sidebar',id='sidebar')

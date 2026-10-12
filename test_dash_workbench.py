@@ -184,11 +184,8 @@ def test_form_selects_active_algorithm_and_rejects_bad_numbers():
     values['max_iter']=2.5
     with pytest.raises(ValueError,match='max_iter'):
         parse_config([values[id_] for id_ in CONFIG_IDS])
-    values.update(max_iter=5,timestep='hourly',models=['HBV Simple Model'])
-    assert parse_config([values[id_] for id_ in CONFIG_IDS])['models']==['HBV Simple Model']
-    values['models']=['HBV Model']
-    with pytest.raises(ValueError,match='仅支持日尺度'):
-        parse_config([values[id_] for id_ in CONFIG_IDS])
+    values.update(max_iter=5,timestep='hourly',models=['HBV Model'])
+    assert parse_config([values[id_] for id_ in CONFIG_IDS])['models']==['HBV Model']
 
 
 def test_boundary_only_map_and_unsafe_zip():

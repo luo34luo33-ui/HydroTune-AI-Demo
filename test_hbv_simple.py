@@ -13,7 +13,7 @@ def forcing():
 
 
 def test_hourly_discharge_conversion_preserves_runoff_volume():
-    model = ModelRegistry.get_model('HBV Simple Model')
+    model = ModelRegistry.get_model('HBV Model')
     rain, evap = forcing()
     daily = model.run(rain, evap, model.default_params, {'area': 100, 'timestep': 'daily'})
     hourly = model.run(rain, evap, model.default_params, {'area': 100, 'timestep': 'hourly'})
@@ -35,7 +35,7 @@ def test_hourly_discharge_conversion_preserves_runoff_volume():
 
 @pytest.mark.parametrize('parameter_mode', ['import', 'calibrate'])
 def test_hourly_dash_pipeline_uses_simple_hbv(parameter_mode):
-    model = ModelRegistry.get_model('HBV Simple Model')
+    model = ModelRegistry.get_model('HBV Model')
     rain, evap = forcing()
     observed = model.run(rain, evap, model.default_params, {'area':100,'timestep':'hourly'})
     frame = pd.DataFrame({'date':pd.date_range('2020-01-01',periods=len(rain),freq='h'),
@@ -59,8 +59,9 @@ def test_hourly_dash_pipeline_uses_simple_hbv(parameter_mode):
         assert simulation['metrics'][0]['NSE'] == pytest.approx(1)
 
 
-def test_original_hbv_is_still_daily_and_keeps_nine_parameters():
+def test_registry_exposes_one_hourly_capable_hbv():
+    assert [name for name in ModelRegistry.list_models() if 'HBV' in name] == ['HBV Model']
     model = ModelRegistry.get_model('HBV Model')
-    assert not model.supports_hourly
-    assert len(model.param_bounds) == 9
-    assert model.get_timestep_hours({'timestep':'hourly'}) == 24
+    assert model.supports_hourly
+    assert set(model.param_bounds) == {'fc','beta','k0','k1','lp'}
+    assert model.get_timestep_hours({'timestep':'hourly'}) == 1

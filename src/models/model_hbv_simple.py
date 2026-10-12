@@ -7,11 +7,11 @@ from .example_model import HBVLikeModel
 
 
 class HBVSimpleModel(HBVLikeModel):
-    """HBV 简化版（五参数，无积雪模块；支持日与小时尺度）。"""
+    """HBV 水文模型：概念性降雨径流模型，包含土壤水分、蒸散发与快慢径流响应。"""
 
     @property
     def name(self) -> str:
-        return 'HBV Simple Model'
+        return 'HBV Model'
 
     def get_param_descriptions(self) -> Dict[str, str]:
         return {
