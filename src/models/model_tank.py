@@ -1,30 +1,52 @@
 # -*- coding: utf-8 -*-
 """
-Tank水箱模型适配器
-使用 tests/models/tank.py 中的纯 NumPy 实现（高性能版本）
+Tank水箱模型适配器 (BaseModel 实现)
+
+算法核心优先使用包内实现 ``src/hydro/tank_simple.py``，
+不再依赖 ``tests/`` 目录与进程工作目录；若包内实现不可用，
+则回退到动态加载 ``tests/models/tank.py``，最后使用内置兜底参数边界。
 """
 import os
-import sys
 import importlib.util
 from typing import Dict, Tuple, Optional
 import numpy as np
 
 from .base_model import BaseModel
 
-# 尝试导入 tests 中的纯 NumPy 版本
+# ------------------------------------------------------------------
+# 核心算法导入
+# ------------------------------------------------------------------
 TANK_NUMPY_AVAILABLE = False
 run_tank_model = None
 TANK_PARAM_BOUNDS = None
 TANK_PARAM_ORDER = None
 
-def _import_tank_numpy():
+
+def _import_tank_core():
+    """按优先级导入 Tank 核心算法与参数边界"""
     global TANK_NUMPY_AVAILABLE, run_tank_model, TANK_PARAM_BOUNDS, TANK_PARAM_ORDER
-    
+
+    # 1) 包内实现（推荐，稳定且不依赖 cwd）
+    try:
+        from src.hydro.tank_simple import (
+            run_tank_model as _run_tank_model,
+            TANK_PARAM_BOUNDS as _bounds,
+            TANK_PARAM_ORDER as _order,
+        )
+        run_tank_model = _run_tank_model
+        TANK_PARAM_BOUNDS = _bounds
+        TANK_PARAM_ORDER = _order
+        TANK_NUMPY_AVAILABLE = True
+        print("[INFO] Tank 包内实现加载成功")
+        return
+    except Exception as e:
+        print(f"[WARN] Tank 包内实现导入失败: {e}")
+
+    # 2) 回退：动态加载 tests/models/tank.py
     possible_paths = [
         os.path.join(os.getcwd(), "tests", "models", "tank.py"),
         os.path.join(os.path.dirname(__file__), "..", "..", "tests", "models", "tank.py"),
     ]
-    
     for path in possible_paths:
         if os.path.exists(path):
             try:
@@ -40,18 +62,19 @@ def _import_tank_numpy():
                     return
             except Exception as e:
                 print(f"[WARN] Tank NumPy版本导入失败: {e}")
-    
+
     TANK_NUMPY_AVAILABLE = False
 
-_import_tank_numpy()
+
+_import_tank_core()
 
 
 class TankModel(BaseModel):
     """
     Tank水箱模型 (Sugawara & Funiyuki, 1956)
-    
+
     经典的概念性水文模型，通过多层水箱模拟水文过程。
-    
+
     模型特点：
     - 四层串联水箱结构
     - 每层具有侧孔和底孔出流
@@ -153,9 +176,9 @@ class TankModel(BaseModel):
         warmup_steps: int = 0,
     ) -> np.ndarray:
         """
-        运行Tank水箱模型（纯NumPy版本，高性能）
-        
-        参数
+        运行Tank水箱模型
+
+        Parameters
         ----------
         precip : np.ndarray
             降水序列 (mm), shape: (n_timesteps,)
@@ -164,60 +187,53 @@ class TankModel(BaseModel):
         params : Dict[str, float]
             模型参数字典
         spatial_data : Dict, optional
-            空间数据，默认 {'area': 150.7944, 'del_t': 24.0}
+            空间数据，含 'area' (km²) 与可选 'del_t' / 'timestep'
         temperature : np.ndarray, optional
-            温度序列，Tank模型不使用此参数
+            温度序列 (°C)，本版本不需要
         warmup_steps : int
             预热期步数
-        
-        返回
+
+        Returns
         -------
         np.ndarray
             模拟流量序列 (m³/s), shape: (n_timesteps,)
         """
         global run_tank_model, TANK_NUMPY_AVAILABLE
-        
+
         if not TANK_NUMPY_AVAILABLE:
-            _import_tank_numpy()
-        
+            _import_tank_core()
+
         if not TANK_NUMPY_AVAILABLE or run_tank_model is None:
             raise RuntimeError("Tank NumPy 模型不可用")
-        
+
         if spatial_data is None:
             spatial_data = {'area': 150.7944, 'del_t': 24.0}
-        
+
         area = spatial_data.get('area', 150.7944)
-        
-        if 'del_t' in spatial_data:
-            del_t = spatial_data['del_t']
-        else:
-            timestep = spatial_data.get('timestep', 'daily')
-            del_t = 1.0 if timestep == 'hourly' else 24.0
-        
+        del_t = spatial_data.get('del_t', self.get_timestep_hours(spatial_data))
+
+        precip = np.asarray(precip, dtype=float)
+        evap_input = np.asarray(evap, dtype=float) if evap is not None else np.zeros_like(precip)
+        if len(evap_input) != len(precip):
+            evap_input = np.zeros_like(precip)
+
         full_params = self.default_params.copy()
-        full_params.update(params)
-        
-        if del_t == 1.0:
-            precip_input = precip * 24.0
-            evap_input = evap * 24.0
-        else:
-            precip_input = precip
-            evap_input = evap
-        
+        full_params.update(params or {})
+
         try:
             flow = run_tank_model(
-                precip=precip_input,
+                precip=precip,
                 evap=evap_input,
                 params=full_params,
                 area=area,
                 del_t=del_t,
             )
-            
+
             flow = np.nan_to_num(flow, nan=0.0, posinf=0.0, neginf=0.0)
             flow = np.maximum(flow, 0)
-            
+
             return flow
-            
+
         except Exception as e:
             print(f"[ERROR] Tank NumPy 模型运行失败: {e}")
             import traceback
@@ -230,4 +246,5 @@ class TankModel(BaseModel):
                 min_val, max_val = self.param_bounds[name]
                 if not (min_val <= value <= max_val):
                     return False
+
         return True

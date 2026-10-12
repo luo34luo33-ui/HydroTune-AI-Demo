@@ -1,21 +1,7 @@
 #!/bin/bash
 # Streamlit Cloud 部署初始化脚本
-# 此脚本在部署时自动运行
+# 说明：模型核心实现已迁移至 src/hydro/，无需初始化任何 git 子模块。
 
 echo "=== 初始化 HydroTune-AI ==="
-
-# 初始化子模块
-echo "初始化 Git 子模块..."
-git submodule update --init --recursive
-
-# 验证子模块
-echo "验证子模块状态..."
-for submodule in XAJ-model-structured HBV_model_structured tank-model-structured; do
-    if [ -d "$submodule" ] && [ -f "$submodule/main.py" ]; then
-        echo "✅ $submodule 已就绪"
-    else
-        echo "❌ $submodule 未正确初始化"
-    fi
-done
-
+echo "模型核心：src/hydro/（hbv_simple / tank_simple / xaj_numpy）"
 echo "=== 初始化完成 ==="

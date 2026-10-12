@@ -82,6 +82,35 @@ if 'current_page' not in st.session_state:
     st.session_state.current_page = 'main'
 
 # ============================================================
+# 绘图与报告公共常量 / 工具函数
+# ============================================================
+PLOT_DPI = 220
+EXPORT_DPI = 450
+
+
+def render_copyable_report(report_text: str, key: str, height: int = 420):
+    """将报告渲染为可一键复制的 Markdown 文本框"""
+    st.text_area(
+        "可复制 Markdown 报告",
+        value=report_text or "",
+        height=height,
+        key=key,
+    )
+
+
+def mean_valid_metric(values) -> float:
+    """指标取均值时剔除 NaN/inf 与失败哨兵值（-900 及以下）"""
+    valid_values = []
+    for value in values:
+        try:
+            numeric_value = float(value)
+        except (TypeError, ValueError):
+            continue
+        if np.isfinite(numeric_value) and numeric_value > -900:
+            valid_values.append(numeric_value)
+    return float(np.mean(valid_values)) if valid_values else np.nan
+
+# ============================================================
 # 页面定义函数
 # ============================================================
 def show_models_page():
@@ -602,16 +631,45 @@ with st.sidebar:
                 step=1,
                 help="XGBoost随机种子，用于保证结果可复现"
             )
+            xgb_enable_error_clipping = st.checkbox(
+                "限制预测误差范围",
+                value=True,
+                help="使用训练残差的分布区间约束 XGB 预测误差，避免出现极端的校正尖峰"
+            )
+            if xgb_enable_error_clipping:
+                xgb_clip_quantile = st.slider(
+                    "残差分位区间",
+                    min_value=0.80,
+                    max_value=0.98,
+                    value=0.90,
+                    step=0.02,
+                    help="取训练残差的中心分位区间作为预测误差的上下界"
+                )
+                xgb_max_correction_ratio = st.slider(
+                    "最大校正比例",
+                    min_value=0.10,
+                    max_value=1.00,
+                    value=0.45,
+                    step=0.05,
+                    help="单次校正量绝对值占当前模拟流量的最大比例"
+                )
+            else:
+                xgb_clip_quantile = 1.0
+                xgb_max_correction_ratio = 1.0
         
         xgb_params = {
             'objective': 'reg:squarederror',
             'max_depth': xgb_max_depth,
             'learning_rate': xgb_learning_rate,
             'n_estimators': xgb_n_estimators,
+            'random_state': int(xgb_random_seed),
         }
     else:
         xgb_params = None
         xgb_random_seed = 2025
+        xgb_enable_error_clipping = True
+        xgb_clip_quantile = 0.90
+        xgb_max_correction_ratio = 0.45
 
     st.divider()
 
@@ -1057,6 +1115,8 @@ if uploaded_files and len(uploaded_files) > 0:
         detected_timestep = 'daily'
         user_timestep = 'daily'
         file_summary = []
+        preanalysis_file_boundaries = []
+        preanalysis_offset = 0
         
         with st.expander("📥 数据文件处理详情", expanded=False):
             for file_idx, (file_name, raw_df) in enumerate(file_dfs):
@@ -1134,6 +1194,15 @@ if uploaded_files and len(uploaded_files) > 0:
                 all_precip.extend(precip_arr.tolist())
                 all_evap.extend(evap_arr.tolist())
                 all_flow.extend(flow_arr.tolist())
+                if len(flow_arr) > 0:
+                    preanalysis_file_boundaries.append({
+                        'start_idx': preanalysis_offset,
+                        'end_idx': preanalysis_offset + len(flow_arr) - 1,
+                        'peak_idx': preanalysis_offset + int(np.argmax(flow_arr)),
+                        'peak_flow': float(np.max(flow_arr)),
+                        'file_name': file_name,
+                    })
+                preanalysis_offset += len(flow_arr)
                 
                 st.write(f"  ✅ 识别到 **{len(flood_events)}** 场洪水")
         
@@ -1197,11 +1266,13 @@ if uploaded_files and len(uploaded_files) > 0:
         preanalyzer = SemanticPreAnalyzer(area=catchment_area, timestep=user_timestep)
         
         is_multi_file_mode = upload_mode == "多文件（每文件一场洪水）"
+        analysis_event_boundaries = preanalysis_file_boundaries if is_multi_file_mode else None
         
         with st.spinner("🤖 AI正在分析洪水场次语义编码..."):
             analysis_result = preanalyzer.analyze(
                 all_flow_arr, all_precip_arr, dates_series, call_minimax, 
-                multi_file_mode=is_multi_file_mode
+                multi_file_mode=is_multi_file_mode,
+                event_boundaries=analysis_event_boundaries
             )
         
         semantic_codes = analysis_result['semantic_codes']
@@ -1669,10 +1740,10 @@ if uploaded_files and len(uploaded_files) > 0:
                         calib_rmse_list.append(result['rmse'])
                         calib_pbias_list.append(result['pbias'])
                 if calib_nse_list:
-                    calibration_results[model_name]['nse'] = np.mean(calib_nse_list)
-                    calibration_results[model_name]['kge'] = np.mean(calib_kge_list)
-                    calibration_results[model_name]['rmse'] = np.mean(calib_rmse_list)
-                    calibration_results[model_name]['pbias'] = np.mean(calib_pbias_list)
+                    calibration_results[model_name]['nse'] = mean_valid_metric(calib_nse_list)
+                    calibration_results[model_name]['kge'] = mean_valid_metric(calib_kge_list)
+                    calibration_results[model_name]['rmse'] = mean_valid_metric(calib_rmse_list)
+                    calibration_results[model_name]['pbias'] = mean_valid_metric(calib_pbias_list)
             
             # 初始化XGB校正数据字典（供后续绘图使用）
             xgb_correction_data = {}
@@ -1750,7 +1821,14 @@ if uploaded_files and len(uploaded_files) > 0:
                             st.warning("⚠️ 率定场次少于3个，数据量不足以训练 XGB 误差校正模型。")
                             xgb_correction_data = {}
                         else:
-                            corrector = ErrorCorrector(xgb_params=xgb_params)
+                            lower_q = (1.0 - xgb_clip_quantile) / 2.0
+                            upper_q = 1.0 - lower_q
+                            corrector = ErrorCorrector(
+                                xgb_params=xgb_params,
+                                enable_error_clipping=xgb_enable_error_clipping,
+                                error_clip_quantiles=(lower_q, upper_q),
+                                max_correction_ratio=xgb_max_correction_ratio,
+                            )
                             corrector.train_by_events(
                                 train_precip_events, train_flow_events, train_sim_events, test_event_ratio=0.0
                             )
@@ -1839,7 +1917,7 @@ if uploaded_files and len(uploaded_files) > 0:
             n_cols = min(2, n_files)
             n_rows = (n_files + n_cols - 1) // n_cols
             
-            fig, axes = plt.subplots(n_rows, n_cols, figsize=(16, 5 * n_rows))
+            fig, axes = plt.subplots(n_rows, n_cols, figsize=(18, 5.8 * n_rows), dpi=PLOT_DPI)
             if n_files == 1:
                 axes = [axes]
             else:
@@ -1936,6 +2014,7 @@ if uploaded_files and len(uploaded_files) > 0:
                     weights = calc_bma_weights(nse_list)
                     bma_result = apply_bma_ensemble(simulated_list, weights)
                     bma_nse = calc_nse(flow_arr_plot, bma_result)
+                    bma_kge = calc_kge(flow_arr_plot, bma_result)
                     bma_rmse = calc_rmse(flow_arr_plot, bma_result)
                     bma_pbias = calc_pbias(flow_arr_plot, bma_result)
                     weights_str = format_weights_string(model_names, weights)
@@ -1949,7 +2028,7 @@ if uploaded_files and len(uploaded_files) > 0:
                         "类型": event_type,
                         "模型": "BMA集成",
                         "NSE": bma_nse,
-                        "KGE": bma_nse,
+                        "KGE": bma_kge,
                         "RMSE": bma_rmse,
                         "PBIAS": bma_pbias
                     })
@@ -1981,7 +2060,16 @@ if uploaded_files and len(uploaded_files) > 0:
                         })
                 
                 ax.set_title(f"{file_name} [{event_type}]", fontsize=14)
-                ax.legend(fontsize=9, loc='upper right')
+                handles, labels = ax.get_legend_handles_labels()
+                precip_handles, precip_labels = ax2.get_legend_handles_labels()
+                ax.legend(
+                    handles + precip_handles,
+                    labels + precip_labels,
+                    fontsize=8,
+                    loc='upper right',
+                    frameon=True,
+                    framealpha=0.85
+                )
                 ax.grid(True, alpha=0.3)
                 ax.set_xlabel(xlabel_text, fontsize=12)
                 ax.set_ylabel(r"流量 ($m^3/s$)", fontsize=12)
@@ -1997,7 +2085,7 @@ if uploaded_files and len(uploaded_files) > 0:
             with col1:
                 import io
                 buf = io.BytesIO()
-                fig.savefig(buf, format='png', dpi=300, bbox_inches='tight')
+                fig.savefig(buf, format='png', dpi=EXPORT_DPI, bbox_inches='tight')
                 buf.seek(0)
                 st.download_button(
                     "💾 下载图像",
@@ -2040,10 +2128,10 @@ if uploaded_files and len(uploaded_files) > 0:
                         for model_name in model_names_for_comparison:
                             model_calib_data = [d for d in calib_data if d['模型'] == model_name]
                             if model_calib_data:
-                                calib_nse = np.mean([d['NSE'] for d in model_calib_data])
-                                calib_kge = np.mean([d['KGE'] for d in model_calib_data])
-                                calib_rmse = np.mean([d['RMSE'] for d in model_calib_data])
-                                calib_pbias = np.mean([d['PBIAS'] for d in model_calib_data])
+                                calib_nse = mean_valid_metric([d['NSE'] for d in model_calib_data])
+                                calib_kge = mean_valid_metric([d['KGE'] for d in model_calib_data])
+                                calib_rmse = mean_valid_metric([d['RMSE'] for d in model_calib_data])
+                                calib_pbias = mean_valid_metric([d['PBIAS'] for d in model_calib_data])
                                 st.markdown(f"**{model_name}**")
                                 st.metric("NSE", f"{calib_nse:.4f}")
                                 st.metric("KGE", f"{calib_kge:.4f}")
@@ -2056,10 +2144,10 @@ if uploaded_files and len(uploaded_files) > 0:
                         for model_name in model_names_for_comparison:
                             model_valid_data = [d for d in valid_data if d['模型'] == model_name]
                             if model_valid_data:
-                                valid_nse = np.mean([d['NSE'] for d in model_valid_data])
-                                valid_kge = np.mean([d['KGE'] for d in model_valid_data])
-                                valid_rmse = np.mean([d['RMSE'] for d in model_valid_data])
-                                valid_pbias = np.mean([d['PBIAS'] for d in model_valid_data])
+                                valid_nse = mean_valid_metric([d['NSE'] for d in model_valid_data])
+                                valid_kge = mean_valid_metric([d['KGE'] for d in model_valid_data])
+                                valid_rmse = mean_valid_metric([d['RMSE'] for d in model_valid_data])
+                                valid_pbias = mean_valid_metric([d['PBIAS'] for d in model_valid_data])
                                 st.markdown(f"**{model_name}**")
                                 st.metric("NSE", f"{valid_nse:.4f}")
                                 st.metric("KGE", f"{valid_kge:.4f}")
@@ -2068,17 +2156,26 @@ if uploaded_files and len(uploaded_files) > 0:
                                 st.divider()
                     
                     with col3:
-                        st.markdown("**XGB校正平均**")
                         xgb_data = [d for d in summary_data if '-XGB' in d['模型']]
                         if xgb_data:
-                            xgb_nse = np.mean([d['NSE'] for d in xgb_data])
-                            xgb_kge = np.mean([d['KGE'] for d in xgb_data])
-                            xgb_rmse = np.mean([d['RMSE'] for d in xgb_data])
-                            xgb_pbias = np.mean([d['PBIAS'] for d in xgb_data])
-                            st.metric("NSE", f"{xgb_nse:.4f}")
-                            st.metric("KGE", f"{xgb_kge:.4f}")
-                            st.metric("RMSE", f"{xgb_rmse:.4f}")
-                            st.metric("PBIAS", f"{xgb_pbias:.2f}%")
+                            xgb_groups = [
+                                ("XGB 率定汇总", [d for d in xgb_data if d['类型'] == '率定']),
+                                ("XGB 验证汇总", [d for d in xgb_data if d['类型'] == '验证']),
+                                ("XGB 总体汇总", xgb_data),
+                            ]
+                            for title, group_data in xgb_groups:
+                                if not group_data:
+                                    continue
+                                xgb_nse = mean_valid_metric([d['NSE'] for d in group_data])
+                                xgb_kge = mean_valid_metric([d['KGE'] for d in group_data])
+                                xgb_rmse = mean_valid_metric([d['RMSE'] for d in group_data])
+                                xgb_pbias = mean_valid_metric([d['PBIAS'] for d in group_data])
+                                st.markdown(f"**{title} (n={len(group_data)})**")
+                                st.metric("NSE", f"{xgb_nse:.4f}")
+                                st.metric("KGE", f"{xgb_kge:.4f}")
+                                st.metric("RMSE", f"{xgb_rmse:.4f}")
+                                st.metric("PBIAS", f"{xgb_pbias:.2f}%")
+                                st.divider()
                         else:
                             st.info("无XGB数据")
                 
@@ -2106,6 +2203,7 @@ if uploaded_files and len(uploaded_files) > 0:
                     xgb_results
                 )
             st.markdown(multifile_report)
+            render_copyable_report(multifile_report, key="multifile_ai_report_copyable")
             
             if not multifile_report.startswith("[ERROR]"):
                 report_filename = f"multifile_report_{datetime.now().strftime('%Y%m%d_%H%M')}.md"
@@ -2304,7 +2402,7 @@ if uploaded_files and len(uploaded_files) > 0:
                 all_flow_arr_plot = all_flow_arr
                 all_precip_arr_plot = all_precip_arr
             
-            fig, ax = plt.subplots(figsize=(14, 5), dpi=150)
+            fig, ax = plt.subplots(figsize=(16, 5.8), dpi=PLOT_DPI)
             
             ax.plot(all_flow_arr_plot, "k-", label="实测", linewidth=2.5)
             
@@ -2348,6 +2446,7 @@ if uploaded_files and len(uploaded_files) > 0:
                 weights = calc_bma_weights(nse_list)
                 bma_result = apply_bma_ensemble(simulated_list, weights)
                 bma_nse = calc_nse(all_flow_arr, bma_result)
+                bma_kge = calc_kge(all_flow_arr, bma_result)
                 bma_rmse = calc_rmse(all_flow_arr, bma_result)
                 bma_pbias = calc_pbias(all_flow_arr, bma_result)
                 weights_str = format_weights_string(model_names, weights)
@@ -2361,13 +2460,22 @@ if uploaded_files and len(uploaded_files) > 0:
                     "类型": "率定",
                     "模型": "BMA集成",
                     "NSE": bma_nse,
-                    "KGE": bma_nse,
+                    "KGE": bma_kge,
                     "RMSE": bma_rmse,
                     "PBIAS": bma_pbias
                 })
             
             ax.set_title("连续序列洪水模拟结果", fontsize=14)
-            ax.legend(fontsize=10, loc='upper right')
+            handles, labels = ax.get_legend_handles_labels()
+            precip_handles, precip_labels = ax2.get_legend_handles_labels()
+            ax.legend(
+                handles + precip_handles,
+                labels + precip_labels,
+                fontsize=8,
+                loc='upper right',
+                frameon=True,
+                framealpha=0.85
+            )
             ax.grid(True, alpha=0.3)
             ax.set_xlabel(xlabel_text, fontsize=12)
             ax.set_ylabel(r"流量 ($m^3/s$)", fontsize=12)
@@ -2391,7 +2499,7 @@ if uploaded_files and len(uploaded_files) > 0:
                 all_flow_arr_plot = all_flow_arr
                 all_precip_arr_plot = all_precip_arr
             
-            fig, ax = plt.subplots(figsize=(14, 5), dpi=150)
+            fig, ax = plt.subplots(figsize=(16, 5.8), dpi=PLOT_DPI)
             
             ax.plot(all_flow_arr_plot, "k-", label="实测", linewidth=2.5)
             
@@ -2435,6 +2543,7 @@ if uploaded_files and len(uploaded_files) > 0:
                 weights = calc_bma_weights(nse_list)
                 bma_result = apply_bma_ensemble(simulated_list, weights)
                 bma_nse = calc_nse(all_flow_arr, bma_result)
+                bma_kge = calc_kge(all_flow_arr, bma_result)
                 bma_rmse = calc_rmse(all_flow_arr, bma_result)
                 bma_pbias = calc_pbias(all_flow_arr, bma_result)
                 weights_str = format_weights_string(model_names, weights)
@@ -2448,13 +2557,22 @@ if uploaded_files and len(uploaded_files) > 0:
                     "类型": "率定",
                     "模型": "BMA集成",
                     "NSE": bma_nse,
-                    "KGE": bma_nse,
+                    "KGE": bma_kge,
                     "RMSE": bma_rmse,
                     "PBIAS": bma_pbias
                 })
             
             ax.set_title("单场洪水模拟结果", fontsize=14)
-            ax.legend(fontsize=10, loc='upper right')
+            handles, labels = ax.get_legend_handles_labels()
+            precip_handles, precip_labels = ax2.get_legend_handles_labels()
+            ax.legend(
+                handles + precip_handles,
+                labels + precip_labels,
+                fontsize=8,
+                loc='upper right',
+                frameon=True,
+                framealpha=0.85
+            )
             ax.grid(True, alpha=0.3)
             ax.set_xlabel(xlabel_text, fontsize=12)
             ax.set_ylabel(r"流量 ($m^3/s$)", fontsize=12)
@@ -2467,7 +2585,7 @@ if uploaded_files and len(uploaded_files) > 0:
             with col1:
                 import io
                 buf = io.BytesIO()
-                fig.savefig(buf, format='png', dpi=300, bbox_inches='tight')
+                fig.savefig(buf, format='png', dpi=EXPORT_DPI, bbox_inches='tight')
                 buf.seek(0)
                 st.download_button(
                     "💾 下载图像",
@@ -2529,7 +2647,7 @@ if uploaded_files and len(uploaded_files) > 0:
                         x = np.arange(len(all_flow_arr))
                         xlabel_text = "时间(天)" if user_timestep == 'daily' else "时间(h)"
                         
-                        fig_ec, ax_ec = plt.subplots(figsize=(14, 5), dpi=150)
+                        fig_ec, ax_ec = plt.subplots(figsize=(16, 5.8), dpi=PLOT_DPI)
                         ax_ec.plot(x, all_flow_arr, 'k-', linewidth=2, label='实测流量', alpha=0.8)
                         ax_ec.plot(x, correction_result['simulated'], 'b--', linewidth=1.5,
                                  label=f"原始 ({best_name})", alpha=0.6)
@@ -2574,6 +2692,7 @@ if uploaded_files and len(uploaded_files) > 0:
                             warmup_hours
                         )
                     st.markdown(multifile_report)
+                    render_copyable_report(multifile_report, key="single_mode_multifile_ai_report_copyable")
                     
                     if not multifile_report.startswith("[ERROR]"):
                         report_filename = f"multifile_report_{datetime.now().strftime('%Y%m%d_%H%M')}.md"
@@ -2586,6 +2705,7 @@ if uploaded_files and len(uploaded_files) > 0:
                 except NameError:
                     pass
                 st.markdown(multifile_report)
+                render_copyable_report(multifile_report, key="single_mode_multifile_ai_report_copyable_fallback")
                 
                 if not multifile_report.startswith("[ERROR]"):
                     report_filename = f"multifile_report_{datetime.now().strftime('%Y%m%d_%H%M')}.md"

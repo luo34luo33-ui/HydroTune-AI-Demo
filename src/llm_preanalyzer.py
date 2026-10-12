@@ -30,7 +30,7 @@ class DataQualityMetrics:
     completeness: float = 100.0
     continuity: float = 100.0
     correlation: float = 0.0
-    quality_level: str = "良好"
+    quality_level: str = "Good"
     issues: List[str] = None
     
     def __post_init__(self):
@@ -231,13 +231,13 @@ class SemanticPreAnalyzer:
             issues.append(f"极值比例为{outlier_ratio:.1f}%，存在异常值")
         
         if completeness >= 95 and continuity >= 95 and correlation >= 0.5 and outlier_ratio <= 5:
-            quality_level = "优秀"
+            quality_level = "Excellent"
         elif completeness >= 90 and continuity >= 90 and correlation >= 0.3 and outlier_ratio <= 10:
-            quality_level = "良好"
+            quality_level = "Good"
         elif completeness >= 80:
-            quality_level = "一般"
+            quality_level = "Fair"
         else:
-            quality_level = "较差"
+            quality_level = "Poor"
         
         return DataQualityMetrics(
             completeness=completeness,
@@ -365,212 +365,242 @@ class SemanticPreAnalyzer:
         quality: DataQualityMetrics,
         multi_file_mode: bool = False
     ) -> str:
-        """Generate analysis plot and convert to Base64"""
-        lang = get_language()
+        """Generate an English, publication-style analysis plot and convert to Base64."""
         try:
             n_events = len(semantic_codes)
             is_multi_flood = n_events > 1 or (n_events == 1 and len(flow_data) > 500)
-            
-            fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-            fig.suptitle('Flood Event Data Pre-Analysis' if lang == 'en' else '洪水场次数据预分析', fontsize=16, fontweight='bold')
-            
-            if is_multi_flood or multi_file_mode:
-                peaks = np.array([c.peak_flow for c in semantic_codes])
-                volumes = np.array([c.flood_volume for c in semantic_codes])
-                
-                ax1 = axes[0, 0]
-                if len(peaks) >= 3:
-                    self._plot_pearson3_curve(ax1, peaks, 'Peak Flow' if lang == 'en' else '洪峰流量', 'm³/s')
+
+            style = {
+                "font.family": "DejaVu Sans",
+                "font.size": 10,
+                "axes.titlesize": 11,
+                "axes.labelsize": 10,
+                "axes.linewidth": 0.8,
+                "xtick.labelsize": 9,
+                "ytick.labelsize": 9,
+                "legend.fontsize": 8,
+                "figure.dpi": 150,
+                "savefig.dpi": 300,
+                "axes.unicode_minus": False,
+            }
+
+            with plt.rc_context(style):
+                fig, axes = plt.subplots(2, 2, figsize=(12, 8), constrained_layout=True)
+                fig.suptitle("Flood Event Data Pre-Analysis", fontsize=13, fontweight="bold")
+
+                if is_multi_flood or multi_file_mode:
+                    peaks = np.array([c.peak_flow for c in semantic_codes])
+                    volumes = np.array([c.flood_volume for c in semantic_codes])
+
+                    ax1 = axes[0, 0]
+                    if len(peaks) >= 3:
+                        self._plot_pearson3_curve(ax1, peaks, "Peak Flow", "m^3/s")
+                    else:
+                        ax1.text(
+                            0.5, 0.5,
+                            "Insufficient samples\nfor frequency analysis",
+                            ha="center", va="center", fontsize=11
+                        )
+                        ax1.set_title("Peak Flow Frequency Curve (P-III)")
+                        self._style_axis(ax1)
+
+                    ax2 = axes[0, 1]
+                    if len(volumes) >= 3:
+                        self._plot_pearson3_curve(ax2, volumes, "Flood Volume", "10^4 m^3")
+                    else:
+                        ax2.text(
+                            0.5, 0.5,
+                            "Insufficient samples\nfor frequency analysis",
+                            ha="center", va="center", fontsize=11
+                        )
+                        ax2.set_title("Flood Volume Frequency Curve (P-III)")
+                        self._style_axis(ax2)
                 else:
-                    ax1.text(0.5, 0.5, 'Insufficient samples\nCannot perform frequency analysis' if lang == 'en' else '样本不足\n无法进行频率分析', ha='center', va='center', fontsize=14)
-                    ax1.set_title('Peak Flow Frequency Curve (P-III)' if lang == 'en' else '洪峰频率曲线（P-III型）', fontsize=12)
-                
-                ax2 = axes[0, 1]
-                if len(volumes) >= 3:
-                    self._plot_pearson3_curve(ax2, volumes, 'Flood Volume' if lang == 'en' else '洪水总量', '10⁴m³')
-                else:
-                    ax2.text(0.5, 0.5, 'Insufficient samples\nCannot perform frequency analysis' if lang == 'en' else '样本不足\n无法进行频率分析', ha='center', va='center', fontsize=14)
-                    ax2.set_title('Flood Volume Frequency Curve (P-III)' if lang == 'en' else '洪水总量频率曲线（P-III型）', fontsize=12)
-            else:
-                xlabel = 'Time (days)' if self.timestep == 'daily' else 'Time (h)' if lang == 'en' else ('时间(天)' if self.timestep == 'daily' else '时间(h)')
-                
-                ax1 = axes[0, 0]
-                time_axis = range(len(flow_data))
-                ax1.plot(time_axis, flow_data, 'b-', linewidth=1.2, label='Flow' if lang == 'en' else '流量')
-                ax1.fill_between(time_axis, 0, flow_data, alpha=0.3, color='steelblue')
-                
-                ax1.set_xlabel(xlabel, fontsize=11)
-                ax1.set_ylabel(r'Flow ($m^3/s$)' if lang == 'en' else r'流量 ($m^3/s$)', fontsize=11)
-                ax1.set_title('Flood Hydrograph' if lang == 'en' else '洪水过程线', fontsize=12)
-                ax1.legend(fontsize=9)
-                ax1.grid(True, alpha=0.3)
-                
-                ax2 = axes[0, 1]
-                peak_idx = int(np.argmax(flow_data))
-                ax2.bar([0], [flow_data[peak_idx]], color='steelblue', alpha=0.8)
-                ax2.set_ylabel(r'Peak Flow ($m^3/s$)' if lang == 'en' else r'峰值流量 ($m^3/s$)', fontsize=11)
-                ax2.set_title(f'Peak: {flow_data[peak_idx]:.1f} m³/s' if lang == 'en' else f'洪峰: {flow_data[peak_idx]:.1f} m³/s', fontsize=12)
-                ax2.set_xticks([])
-                ax2.grid(True, alpha=0.3, axis='y')
-            
-            ax3 = axes[1, 0]
-            if semantic_codes and len(semantic_codes) > 1:
-                volumes = [c.flood_volume for c in semantic_codes]
-                precips = [c.total_precip for c in semantic_codes]
-                ax3.scatter(precips, volumes, c='steelblue', s=80, alpha=0.7, edgecolors='navy')
-                
-                if len(precips) > 1:
-                    z = np.polyfit(precips, volumes, 1)
-                    p = np.poly1d(z)
-                    x_line = np.linspace(min(precips), max(precips), 100)
-                    ax3.plot(x_line, p(x_line), 'r--', linewidth=1.5, alpha=0.7, label='Trend Line' if lang == 'en' else '趋势线')
-                
-                ax3.set_xlabel('Total Precipitation (mm)' if lang == 'en' else '总降水量 (mm)', fontsize=11)
-                ax3.set_ylabel(r'Flood Volume ($10^4 m^3$)' if lang == 'en' else r'洪水总量 ($10^4 m^3$)', fontsize=11)
-                ax3.set_title('Precipitation-Runoff Relationship' if lang == 'en' else '降水-径流关系', fontsize=12)
-                ax3.legend(fontsize=9)
-                ax3.grid(True, alpha=0.3)
-            elif semantic_codes:
-                ax3.text(0.5, 0.5, 'Single event\nNo comparison data' if lang == 'en' else '单场洪水\n无对比数据', ha='center', va='center', fontsize=14)
-                ax3.set_title('Precipitation-Runoff Relationship' if lang == 'en' else '降水-径流关系', fontsize=12)
-            
-            ax4 = axes[1, 1]
-            if lang == 'en':
-                metrics = ['Completeness', 'Continuity', 'Correlation', 'Quality']
-            else:
-                metrics = ['完整率', '连续性', '相关性', '质量等级']
-            values = [
-                quality.completeness,
-                quality.continuity,
-                quality.correlation * 100,
-                {'优秀': 100, '良好': 80, '一般': 60, '较差': 40, 'Excellent': 100, 'Good': 80, 'Fair': 60, 'Poor': 40}.get(quality.quality_level, 60)
-            ]
-            
-            angles = np.linspace(0, 2 * np.pi, len(metrics), endpoint=False).tolist()
-            values_plot = values + [values[0]]
-            angles += angles[:1]
-            
-            ax4.remove()
-            ax4 = fig.add_subplot(2, 2, 4, projection='polar')
-            ax4.plot(angles, values_plot, 'o-', linewidth=2, color='steelblue')
-            ax4.fill(angles, values_plot, alpha=0.25, color='steelblue')
-            ax4.set_xticks(angles[:-1])
-            ax4.set_xticklabels(metrics, fontsize=10)
-            ax4.set_ylim(0, 100)
-            ax4.set_title('Data Quality Radar Chart' if lang == 'en' else '数据质量雷达图', fontsize=12, pad=20)
-            
-            plt.tight_layout()
-            
-            buffer = BytesIO()
-            plt.savefig(buffer, format='png', dpi=100, bbox_inches='tight', 
-                       facecolor='white', edgecolor='none')
-            buffer.seek(0)
-            
-            img_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-            plt.close(fig)
-            
-            return img_base64
-            
+                    xlabel = "Time (days)" if self.timestep == "daily" else "Time (h)"
+
+                    ax1 = axes[0, 0]
+                    time_axis = np.arange(len(flow_data))
+                    ax1.plot(time_axis, flow_data, color="#1f4e79", linewidth=1.3, label="Observed flow")
+                    ax1.fill_between(time_axis, 0, flow_data, color="#1f4e79", alpha=0.12)
+                    ax1.set_xlabel(xlabel)
+                    ax1.set_ylabel(r"Flow ($m^3/s$)")
+                    ax1.set_title("Flood Hydrograph")
+                    ax1.legend(loc="upper right", frameon=False)
+                    self._style_axis(ax1)
+
+                    ax2 = axes[0, 1]
+                    peak_idx = int(np.argmax(flow_data))
+                    ax2.bar([0], [flow_data[peak_idx]], color="#1f4e79", alpha=0.85, width=0.45)
+                    ax2.set_ylabel(r"Peak Flow ($m^3/s$)")
+                    ax2.set_title(f"Peak Flow = {flow_data[peak_idx]:.1f} m^3/s")
+                    ax2.set_xticks([])
+                    self._style_axis(ax2)
+
+                ax3 = axes[1, 0]
+                if semantic_codes and len(semantic_codes) > 1:
+                    volumes = [c.flood_volume for c in semantic_codes]
+                    precips = [c.total_precip for c in semantic_codes]
+                    ax3.scatter(
+                        precips, volumes, marker="o", s=42,
+                        facecolors="white", edgecolors="#1f4e79",
+                        linewidths=1.1, label="Flood events"
+                    )
+
+                    if len(precips) > 1 and min(precips) != max(precips):
+                        z = np.polyfit(precips, volumes, 1)
+                        p = np.poly1d(z)
+                        x_line = np.linspace(min(precips), max(precips), 100)
+                        ax3.plot(
+                            x_line, p(x_line), color="#b22222",
+                            linestyle="--", linewidth=1.2, label="Linear fit"
+                        )
+
+                    ax3.set_xlabel("Total Precipitation (mm)")
+                    ax3.set_ylabel(r"Flood Volume ($10^4$ m$^3$)")
+                    ax3.set_title("Precipitation-Runoff Relationship")
+                    ax3.legend(loc="best", frameon=False)
+                    self._style_axis(ax3)
+                elif semantic_codes:
+                    ax3.text(
+                        0.5, 0.5, "Single event\nNo comparison data",
+                        ha="center", va="center", fontsize=11
+                    )
+                    ax3.set_title("Precipitation-Runoff Relationship")
+                    self._style_axis(ax3)
+
+                ax4 = axes[1, 1]
+                metrics = ["Completeness", "Continuity", "Correlation", "Quality"]
+                quality_score = self._quality_score_for_plot(quality)
+                values = [
+                    quality.completeness,
+                    quality.continuity,
+                    quality.correlation * 100,
+                    quality_score,
+                ]
+
+                angles = np.linspace(0, 2 * np.pi, len(metrics), endpoint=False).tolist()
+                values_plot = values + [values[0]]
+                angles += angles[:1]
+
+                ax4.remove()
+                ax4 = fig.add_subplot(2, 2, 4, projection="polar")
+                ax4.plot(angles, values_plot, marker="o", linewidth=1.4, color="#1f4e79")
+                ax4.fill(angles, values_plot, alpha=0.14, color="#1f4e79")
+                ax4.set_xticks(angles[:-1])
+                ax4.set_xticklabels(metrics)
+                ax4.set_ylim(0, 100)
+                ax4.set_yticks([25, 50, 75, 100])
+                ax4.set_yticklabels(["25", "50", "75", "100"])
+                ax4.grid(color="#d0d0d0", linewidth=0.6)
+                ax4.spines["polar"].set_color("#4a4a4a")
+                ax4.spines["polar"].set_linewidth(0.8)
+                ax4.set_title("Data Quality Radar Chart", pad=18)
+
+                buffer = BytesIO()
+                fig.savefig(
+                    buffer, format="png", dpi=300, bbox_inches="tight",
+                    facecolor="white", edgecolor="none"
+                )
+                buffer.seek(0)
+
+                img_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                plt.close(fig)
+
+                return img_base64
+
         except Exception as e:
-            if lang == 'en':
-                warnings.warn(f"Failed to generate plot: {e}")
-            else:
-                warnings.warn(f"生成图片失败: {e}")
+            warnings.warn(f"Failed to generate plot: {e}")
             return ""
-    
+
+    @staticmethod
+    def _style_axis(ax) -> None:
+        """Apply restrained, paper-style axis formatting."""
+        ax.grid(True, color="#d9d9d9", linewidth=0.6, alpha=0.8)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.spines["left"].set_color("#4a4a4a")
+        ax.spines["bottom"].set_color("#4a4a4a")
+        ax.tick_params(direction="out", length=3, width=0.8, colors="#333333")
+
+    @staticmethod
+    def _quality_score_for_plot(quality: DataQualityMetrics) -> float:
+        """Convert quality indicators into a 0-100 plot score without localized labels."""
+        if quality.completeness >= 95 and quality.continuity >= 95 and quality.correlation >= 0.5:
+            return 100.0
+        if quality.completeness >= 90 and quality.continuity >= 90 and quality.correlation >= 0.3:
+            return 80.0
+        if quality.completeness >= 80:
+            return 60.0
+        return 40.0
+
     def _plot_pearson3_curve(self, ax, data: np.ndarray, label: str, unit: str):
-        """
-        Plot Pearson Type III (P-III) frequency curve
-        """
-        lang = get_language()
+        """Plot an English Pearson Type III (P-III) frequency curve."""
         n = len(data)
         if n < 3:
-            if lang == 'en':
-                ax.text(0.5, 0.5, f'Insufficient samples (n={n})', ha='center', va='center', fontsize=14)
-                ax.set_title(f'{label} Frequency Curve (P-III)', fontsize=12)
-            else:
-                ax.text(0.5, 0.5, f'样本不足(n={n})', ha='center', va='center', fontsize=14)
-                ax.set_title(f'{label}频率曲线（P-III型）', fontsize=12)
+            ax.text(0.5, 0.5, f"Insufficient samples (n={n})", ha="center", va="center", fontsize=11)
+            ax.set_title(f"{label} Frequency Curve (P-III)")
+            self._style_axis(ax)
             return
-        
-        # 1. 数据排序与经验频率计算（水文惯例：针对洪水等极大值，采用降序）
-        # 左低频（大洪水），右高频（枯水）
-        sorted_data = np.sort(data)[::-1] 
+
+        sorted_data = np.sort(data)[::-1]
         m = np.arange(1, n + 1)
-        empirical_freq = m / (n + 1)  # 韦伯(Weibull)经验频率公式
-        
-        # 2. 计算统计参数
+        empirical_freq = m / (n + 1)
+
         mean_val = np.mean(sorted_data)
         std_val = np.std(sorted_data, ddof=1)
         cv = std_val / mean_val if mean_val > 0 else 0
-        
-        # 计算偏态系数 Cs (采用无偏估计或直接计算，此处为样本标准矩计算)
-        if std_val > 0:
-            cs = np.sum((sorted_data - mean_val) ** 3) / (n * std_val ** 3)
-        else:
-            cs = 0
-            
-        # 3. 概率坐标系转换函数（模拟海森频率纸）
+        cs = np.sum((sorted_data - mean_val) ** 3) / (n * std_val ** 3) if std_val > 0 else 0
+
         def to_prob_scale(p):
-            """将频率转换为标准正态分位数，以拉伸X轴"""
             p = np.clip(p, 1e-5, 1 - 1e-5)
             return stats.norm.ppf(p)
-            
-        # 4. 绘制经验点据
+
         x_emp = to_prob_scale(empirical_freq)
-        # 水文经验点常用空心圆，避免遮挡曲线
-        ax.scatter(x_emp, sorted_data, facecolors='none', edgecolors='steelblue', 
-                s=50, linewidths=1.5, zorder=3, label='经验频率点')
-        
-        # 5. 计算并绘制 P-III 理论曲线
-        # 使用极密集的频率点序列，保证曲线在概率纸上极度平滑
+        ax.scatter(
+            x_emp, sorted_data, facecolors="white", edgecolors="#1f4e79",
+            s=42, linewidths=1.1, zorder=3, label="Empirical points"
+        )
+
         p_dense = np.concatenate([
             np.linspace(0.0001, 0.01, 50),
             np.linspace(0.01, 0.99, 100),
-            np.linspace(0.99, 0.9999, 50)
+            np.linspace(0.99, 0.9999, 50),
         ])
-        
-        # 利用 scipy.stats.pearson3 的逆生存函数(isf)直接计算给定超越概率的设计值
         theoretical_freqs = stats.pearson3.isf(p_dense, skew=cs, loc=mean_val, scale=std_val)
         x_theo = to_prob_scale(p_dense)
-        ax.plot(x_theo, theoretical_freqs, 'r-', linewidth=1.8, zorder=2, label='P-III理论曲线')
-        
-        # 6. 设置水文特色横坐标轴刻度 (典型的频率纸刻度)
+        ax.plot(x_theo, theoretical_freqs, color="#b22222", linewidth=1.3, zorder=2, label="P-III fitted curve")
+
         xtick_probs = np.array([0.01, 0.1, 1, 5, 10, 20, 50, 80, 90, 95, 99, 99.9]) / 100
         xtick_locs = to_prob_scale(xtick_probs)
-        xtick_labels = ['0.01', '0.1', '1', '5', '10', '20', '50', '80', '90', '95', '99', '99.9']
-        
+        xtick_labels = ["0.01", "0.1", "1", "5", "10", "20", "50", "80", "90", "95", "99", "99.9"]
+
         ax.set_xticks(xtick_locs)
-        ax.set_xticklabels(xtick_labels, fontsize=9)
+        ax.set_xticklabels(xtick_labels)
         ax.set_xlim(to_prob_scale(0.0001), to_prob_scale(0.999))
-        
-        # 7. 绘制网格线
-        ax.grid(True, which='major', axis='x', color='gray', linestyle='--', alpha=0.4)
-        ax.grid(True, which='major', axis='y', color='gray', linestyle='-', alpha=0.2)
-        
-        # 8. 图面信息补充：在图上标注三大统计参数 (水文规范核心要求)
+        ax.grid(True, which="major", axis="x", color="#d0d0d0", linestyle="--", linewidth=0.6)
+        ax.grid(True, which="major", axis="y", color="#e0e0e0", linestyle="-", linewidth=0.5)
+
         param_text = (
             f"$\\bar{{X}}$ = {mean_val:.2f}\n"
             f"$C_v$ = {cv:.3f}\n"
             f"$C_s$ = {cs:.3f}"
         )
-        # 将参数框放置在右上角
-        ax.text(0.95, 0.95, param_text, transform=ax.transAxes, 
-                fontsize=10, verticalalignment='top', horizontalalignment='right',
-                bbox=dict(boxstyle='round,pad=0.5', facecolor='white', alpha=0.9, edgecolor='lightgray'),
-                zorder=4)
-        
-        # 9. 标题与图例
-        lang = get_language()
-        if lang == 'en':
-            ax.set_xlabel('Frequency P (%)', fontsize=11)
-            ax.set_ylabel(f'{label} ({unit})', fontsize=11)
-            ax.set_title(f'{label} Theoretical & Empirical Frequency Curve (P-III)', fontsize=12, pad=10)
-        else:
-            ax.set_xlabel('频率 P (%)', fontsize=11)
-            ax.set_ylabel(f'{label} ({unit})', fontsize=11)
-            ax.set_title(f'{label}理论与经验频率曲线 (P-III)', fontsize=12, pad=10)
-        ax.legend(loc='lower left', fontsize=10, framealpha=0.9)
+        ax.text(
+            0.95, 0.95, param_text, transform=ax.transAxes,
+            fontsize=9, verticalalignment="top", horizontalalignment="right",
+            bbox=dict(boxstyle="round,pad=0.35", facecolor="white", alpha=0.95, edgecolor="#bdbdbd", linewidth=0.6),
+            zorder=4,
+        )
+
+        ax.set_xlabel("Exceedance Probability P (%)")
+        ax.set_ylabel(f"{label} ({unit})")
+        ax.set_title(f"{label} Frequency Curve (P-III)", pad=8)
+        ax.legend(loc="lower left", frameon=False)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.spines["left"].set_color("#4a4a4a")
+        ax.spines["bottom"].set_color("#4a4a4a")
+        ax.tick_params(direction="out", length=3, width=0.8, colors="#333333")
 
     def generate_analysis_prompt(
         self,
@@ -686,7 +716,8 @@ Please respond in Markdown format, keeping it professional and concise, covering
         precip_data: np.ndarray,
         dates: pd.Series,
         call_llm=call_minimax,
-        multi_file_mode: bool = False
+        multi_file_mode: bool = False,
+        event_boundaries: List[Dict] = None
     ) -> Dict[str, Any]:
         """执行完整的LLM智能分析
         
@@ -703,7 +734,8 @@ Please respond in Markdown format, keeping it professional and concise, covering
         """
         quality = self.evaluate_quality(precip_data, flow_data, dates)
         
-        event_boundaries = self.detect_flood_events(flow_data, dates, precip_data)
+        if event_boundaries is None:
+            event_boundaries = self.detect_flood_events(flow_data, dates, precip_data)
         
         if not event_boundaries:
             event_boundaries = [{

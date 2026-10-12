@@ -1,30 +1,49 @@
 # -*- coding: utf-8 -*-
 """
-HBV水文模型适配器
-使用 tests/models/hbv.py 中的纯 NumPy 实现（高性能版本）
+HBV模型适配器 (BaseModel 实现)
+
+算法核心优先使用包内实现 ``src/hydro/hbv_simple.py``，
+不再依赖 ``tests/`` 目录与进程工作目录；若包内实现不可用，
+则回退到动态加载 ``tests/models/hbv.py``，最后使用内置兜底参数边界。
 """
 import os
-import sys
 import importlib.util
-from pathlib import Path
 from typing import Dict, Tuple, Optional
 import numpy as np
 
 from .base_model import BaseModel
 
-# 尝试导入 tests 中的纯 NumPy 版本
+# ------------------------------------------------------------------
+# 核心算法导入
+# ------------------------------------------------------------------
 HBV_NUMPY_AVAILABLE = False
 run_hbv_model = None
 HBV_PARAM_BOUNDS = None
 
-def _import_hbv_numpy():
+
+def _import_hbv_core():
+    """按优先级导入 HBV 核心算法与参数边界"""
     global HBV_NUMPY_AVAILABLE, run_hbv_model, HBV_PARAM_BOUNDS
-    
+
+    # 1) 包内实现（推荐，稳定且不依赖 cwd）
+    try:
+        from src.hydro.hbv_simple import (
+            run_hbv_model as _run_hbv_model,
+            HBV_PARAM_BOUNDS as _bounds,
+        )
+        run_hbv_model = _run_hbv_model
+        HBV_PARAM_BOUNDS = _bounds
+        HBV_NUMPY_AVAILABLE = True
+        print("[INFO] HBV 包内实现加载成功")
+        return
+    except Exception as e:
+        print(f"[WARN] HBV 包内实现导入失败: {e}")
+
+    # 2) 回退：动态加载 tests/models/hbv.py
     possible_paths = [
         os.path.join(os.getcwd(), "tests", "models", "hbv.py"),
         os.path.join(os.path.dirname(__file__), "..", "..", "tests", "models", "hbv.py"),
     ]
-    
     for path in possible_paths:
         if os.path.exists(path):
             try:
@@ -39,24 +58,25 @@ def _import_hbv_numpy():
                     return
             except Exception as e:
                 print(f"[WARN] HBV NumPy版本导入失败: {e}")
-    
+
     HBV_NUMPY_AVAILABLE = False
 
-_import_hbv_numpy()
+
+_import_hbv_core()
 
 
 class HBVModelAdapter(BaseModel):
     """
     HBV (Hydrologiska Byråns Vattenbalans) 水文模型
-    
+
     经典的概念性水文模型，由瑞典水文气象局开发。
-    
+
     模型特点：
     - 土壤含水量模块
     - 蒸散发计算
     - 响应函数模块（三个线性水库）
     - 汇流模块
-    
+
     参数说明：
     - fc: 田间持水量 (mm)
     - beta: 形状参数
@@ -141,9 +161,9 @@ class HBVModelAdapter(BaseModel):
         warmup_steps: int = 0,
     ) -> np.ndarray:
         """
-        运行HBV水文模型（纯NumPy版本，高性能）
-        
-        参数
+        运行HBV水文模型
+
+        Parameters
         ----------
         precip : np.ndarray
             降水序列 (mm/day), shape: (n_timesteps,)
@@ -157,41 +177,46 @@ class HBVModelAdapter(BaseModel):
             温度序列 (°C)，本版本不需要
         warmup_steps : int
             预热期步数
-        
-        返回
+
+        Returns
         -------
         np.ndarray
             模拟流量序列 (m³/s), shape: (n_timesteps,)
         """
         global run_hbv_model, HBV_NUMPY_AVAILABLE
-        
+
         if not HBV_NUMPY_AVAILABLE:
-            _import_hbv_numpy()
-        
+            _import_hbv_core()
+
         if not HBV_NUMPY_AVAILABLE or run_hbv_model is None:
             raise RuntimeError("HBV NumPy 模型不可用")
-        
+
         if spatial_data is None:
             spatial_data = {'area': 150.7944}
-        
+
         area = spatial_data.get('area', 150.7944)
-        
+
+        precip = np.asarray(precip, dtype=float)
+        evap_input = np.asarray(evap, dtype=float) if evap is not None else np.zeros_like(precip)
+        if len(evap_input) != len(precip):
+            evap_input = np.zeros_like(precip)
+
         full_params = self.default_params.copy()
-        full_params.update(params)
-        
+        full_params.update(params or {})
+
         try:
             flow = run_hbv_model(
                 precip=precip,
-                evap=evap,
+                evap=evap_input,
                 params=full_params,
                 area=area,
             )
-            
+
             flow = np.nan_to_num(flow, nan=0.0, posinf=0.0, neginf=0.0)
             flow = np.maximum(flow, 0)
-            
+
             return flow
-            
+
         except Exception as e:
             print(f"[ERROR] HBV NumPy 模型运行失败: {e}")
             import traceback
@@ -204,4 +229,5 @@ class HBVModelAdapter(BaseModel):
                 min_val, max_val = self.param_bounds[name]
                 if not (min_val <= value <= max_val):
                     return False
+
         return True

@@ -35,10 +35,19 @@ class ErrorCorrector:
         n_error_lags: int = N_ERROR_LAGS,
         n_precip_lags: int = N_PRECIP_LAGS,
         xgb_params: Dict = None,
+        enable_error_clipping: bool = True,
+        error_clip_quantiles: tuple = (0.05, 0.95),
+        max_error_std: float = 2.5,
+        max_correction_ratio: float = 0.45,
     ):
         self.n_error_lags = n_error_lags
         self.n_precip_lags = n_precip_lags
         self.xgb_params = xgb_params or DEFAULT_XGB_PARAMS
+        self.enable_error_clipping = enable_error_clipping
+        self.error_clip_quantiles = error_clip_quantiles
+        self.max_error_std = max_error_std
+        self.max_correction_ratio = max_correction_ratio
+        self.error_clip_bounds = None
         self.model = None
         self.test_nse = -9999
         self.is_trained = False
@@ -93,8 +102,11 @@ class ErrorCorrector:
         y_train = np.array(train_y)
         X_test = np.array(test_X)
         y_test = np.array(test_y)
+        self._fit_error_clip_bounds(y_train)
         
-        self.model = XGBRegressor(**self.xgb_params, random_state=42)
+        model_params = self.xgb_params.copy()
+        model_params.setdefault('random_state', 42)
+        self.model = XGBRegressor(**model_params)
         self.model.fit(X_train, y_train)
         
         y_pred = self.model.predict(X_test)
@@ -156,11 +168,14 @@ class ErrorCorrector:
         y_train = np.array(train_y)
         X_test = np.array(test_X)
         y_test = np.array(test_y)
+        self._fit_error_clip_bounds(y_train)
         
         if len(X_train) == 0:
             raise ValueError("训练数据为空，请确保有足够的场次用于训练")
         
-        self.model = XGBRegressor(**self.xgb_params, random_state=42)
+        model_params = self.xgb_params.copy()
+        model_params.setdefault('random_state', 42)
+        self.model = XGBRegressor(**model_params)
         self.model.fit(X_train, y_train)
         
         if len(X_test) > 0:
@@ -201,7 +216,7 @@ class ErrorCorrector:
             error_lags = [error[t - lag] for lag in range(1, self.n_error_lags + 1)]
             features = self._build_features(error_lags, precip, t)
             
-            pred_error = self.predict(features)
+            pred_error = self._clip_predicted_error(self.predict(features), simulated[t])
             error[t] = pred_error
             corrected[t] = simulated[t] + pred_error
         
@@ -240,7 +255,7 @@ class ErrorCorrector:
             error_lags = [true_error[t - lag] for lag in range(1, self.n_error_lags + 1)]
             features = self._build_features(error_lags, precip, t)
             
-            pred_error = self.predict(features)
+            pred_error = self._clip_predicted_error(self.predict(features), simulated[t])
             corrected[t] = simulated[t] + pred_error
         
         return np.maximum(corrected, 0)
@@ -261,6 +276,45 @@ class ErrorCorrector:
                 features.append(0.0)
         
         return np.array(features)
+
+    def _fit_error_clip_bounds(self, train_errors: np.ndarray) -> None:
+        """Estimate robust bounds for XGB-predicted residuals from training residuals."""
+        if not self.enable_error_clipping:
+            self.error_clip_bounds = None
+            return
+
+        train_errors = np.asarray(train_errors, dtype=float)
+        train_errors = train_errors[np.isfinite(train_errors)]
+        if len(train_errors) == 0:
+            self.error_clip_bounds = None
+            return
+
+        q_low, q_high = np.quantile(train_errors, self.error_clip_quantiles)
+        mean_error = np.mean(train_errors)
+        std_error = np.std(train_errors)
+        if std_error > 0:
+            std_low = mean_error - self.max_error_std * std_error
+            std_high = mean_error + self.max_error_std * std_error
+            q_low = max(q_low, std_low)
+            q_high = min(q_high, std_high)
+
+        if q_low > q_high:
+            q_low, q_high = q_high, q_low
+        self.error_clip_bounds = (float(q_low), float(q_high))
+
+    def _clip_predicted_error(self, pred_error: float, simulated_value: float) -> float:
+        """Limit extreme residual predictions before applying correction."""
+        if not self.enable_error_clipping or self.error_clip_bounds is None:
+            return float(pred_error)
+
+        lower, upper = self.error_clip_bounds
+        clipped_error = float(np.clip(pred_error, lower, upper))
+
+        local_limit = abs(float(simulated_value)) * self.max_correction_ratio
+        if np.isfinite(local_limit) and local_limit > 0:
+            clipped_error = float(np.clip(clipped_error, -local_limit, local_limit))
+
+        return clipped_error
 
 
 def calc_nse(o: np.ndarray, s: np.ndarray) -> float:

@@ -21,8 +21,14 @@ def calc_bma_weights(nse_list: List[float], temperature: float = 2.0) -> np.ndar
     返回:
         weights: 归一化权重数组
     """
-    nse_arr = np.array(nse_list)
-    exp_scores = np.exp(nse_arr / temperature)
+    nse_arr = np.array(nse_list, dtype=float)
+    valid_mask = np.isfinite(nse_arr) & (nse_arr > -900)
+    if not np.any(valid_mask):
+        return np.ones(len(nse_arr)) / len(nse_arr)
+
+    safe_scores = np.where(valid_mask, nse_arr, np.min(nse_arr[valid_mask]) - 10)
+    shifted_scores = safe_scores - np.max(safe_scores)
+    exp_scores = np.exp(shifted_scores / temperature)
     weights = exp_scores / np.sum(exp_scores)
     return weights
 

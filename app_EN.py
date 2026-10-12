@@ -47,7 +47,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Page Configuration
 # ============================================================
 st.set_page_config(
-    page_title="HydroTune-AI - Intelligent Watershed Hydrological Model Calibration System",
+    page_title="HydroTune",
     page_icon="🌊",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -82,6 +82,57 @@ plt.rcParams["axes.unicode_minus"] = False
 # ============================================================
 if 'current_page' not in st.session_state:
     st.session_state.current_page = 'main'
+
+PLOT_DPI = 220
+EXPORT_DPI = 450
+
+
+def render_copyable_report(report_text: str, key: str, height: int = 420):
+    """Render a report as a copyable Markdown text box."""
+    st.text_area(
+        "Copyable Markdown Report",
+        value=report_text or "",
+        height=height,
+        key=key,
+    )
+
+
+def format_quality_level_en(quality) -> str:
+    """Return an English quality label from quality metrics."""
+    raw_level = str(getattr(quality, "quality_level", "")).strip()
+    level_map = {
+        "Excellent": "Excellent",
+        "Good": "Good",
+        "Fair": "Fair",
+        "Poor": "Poor",
+        "优秀": "Excellent",
+        "良好": "Good",
+        "一般": "Fair",
+        "较差": "Poor",
+    }
+    if raw_level in level_map:
+        return level_map[raw_level]
+
+    if quality.completeness >= 95 and quality.continuity >= 95 and quality.correlation >= 0.5:
+        return "Excellent"
+    if quality.completeness >= 90 and quality.continuity >= 90 and quality.correlation >= 0.3:
+        return "Good"
+    if quality.completeness >= 80:
+        return "Fair"
+    return "Poor"
+
+
+def mean_valid_metric(values) -> float:
+    """Average metrics while excluding NaN/inf and failure sentinels."""
+    valid_values = []
+    for value in values:
+        try:
+            numeric_value = float(value)
+        except (TypeError, ValueError):
+            continue
+        if np.isfinite(numeric_value) and numeric_value > -900:
+            valid_values.append(numeric_value)
+    return float(np.mean(valid_values)) if valid_values else np.nan
 
 # ============================================================
 # Page definition functions
@@ -247,13 +298,13 @@ def show_models_page():
 # ============================================================
 # Title Area
 # ============================================================
-st.title("HydroTune-AI - Intelligent Watershed Hydrological Model Calibration System")
-st.caption("Upload Data → Smart Cleaning → Multi-Model Calibration → XGB Error Correction → Auto Report")
+st.title("HydroTune")
+st.caption("an LLM-agent platform for accurate hydrological simulation through multi-model calibration and physics-informed error correction")
 
 st.markdown("""
 ### 🌟 Features
 
-**HydroTune-AI** is an intelligent hydrological model calibration system that supports:
+**HydroTune** is an LLM-agent platform for accurate hydrological simulation through multi-model calibration and physics-informed error correction that supports:
 
 - 📊 **Multi-Model Integration**: HBV, Xinanjiang (XAJ), Tank Model
 - 🔄 **Smart Calibration**: Automatic model parameter calibration with multiple optimization algorithms
@@ -601,16 +652,45 @@ with st.sidebar:
                 step=1,
                 help="XGBoost random seed for reproducible results"
             )
+            xgb_enable_error_clipping = st.checkbox(
+                "Limit Predicted Error Range",
+                value=True,
+                help="Clip XGB-predicted residuals using training residual bounds to avoid extreme correction spikes"
+            )
+            if xgb_enable_error_clipping:
+                xgb_clip_quantile = st.slider(
+                    "Residual Quantile Range",
+                    min_value=0.80,
+                    max_value=0.98,
+                    value=0.90,
+                    step=0.02,
+                    help="Central fraction of training residuals used as prediction-error bounds"
+                )
+                xgb_max_correction_ratio = st.slider(
+                    "Max Correction Ratio",
+                    min_value=0.10,
+                    max_value=1.00,
+                    value=0.45,
+                    step=0.05,
+                    help="Maximum absolute correction as a fraction of the current simulated flow"
+                )
+            else:
+                xgb_clip_quantile = 1.0
+                xgb_max_correction_ratio = 1.0
         
         xgb_params = {
             'objective': 'reg:squarederror',
             'max_depth': xgb_max_depth,
             'learning_rate': xgb_learning_rate,
             'n_estimators': xgb_n_estimators,
+            'random_state': int(xgb_random_seed),
         }
     else:
         xgb_params = None
         xgb_random_seed = 2025
+        xgb_enable_error_clipping = True
+        xgb_clip_quantile = 0.90
+        xgb_max_correction_ratio = 0.45
 
     st.divider()
 
@@ -837,8 +917,8 @@ elif not uploaded_files:
     
     st.markdown("""
     <div class="hero-section">
-        <div class="hero-title">HydroTune-AI</div>
-        <div class="hero-subtitle">Intelligent Watershed Hydrological Model Calibration System</div>
+        <div class="hero-title">HydroTune</div>
+        <div class="hero-subtitle">an LLM-agent platform for accurate hydrological simulation through multi-model calibration and physics-informed error correction</div>
         <div style="margin-top: 25px;">
             <span class="tech-badge">AI-Driven</span>
             <span class="tech-badge">Multi-Model</span>
@@ -859,7 +939,7 @@ elif not uploaded_files:
     st.markdown("""
     <div style="text-align: center; margin-bottom: 30px;">
         <h2 style="color: #1e293b; font-weight: 700;">Core Capabilities</h2>
-        <p style="color: #64748b;">AI-powered hydrological model calibration platform</p>
+        <p style="color: #64748b;">an LLM-agent platform for accurate hydrological simulation through multi-model calibration and physics-informed error correction</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -996,12 +1076,12 @@ elif not uploaded_files:
     
     st.markdown("""
     <div style="text-align: center; color: #94a3b8; padding: 30px 0; border-top: 1px solid #e2e8f0;">
-        <small>HydroTune-AI v1.0 | AI-Powered Hydrological Model Calibration</small>
+        <small>HydroTune v1.0 | LLM-Agent Hydrological Simulation Platform</small>
     </div>
     """, unsafe_allow_html=True)
     
     st.markdown("<br>", unsafe_allow_html=True)
-    st.info("👈 Upload hydrological data files on the left to start using HydroTune-AI")
+    st.info("👈 Upload hydrological data files on the left to start using HydroTune")
 
 # ============================================================
 # Main Flow
@@ -1056,6 +1136,8 @@ if uploaded_files and len(uploaded_files) > 0:
         detected_timestep = 'daily'
         user_timestep = 'daily'
         file_summary = []
+        preanalysis_file_boundaries = []
+        preanalysis_offset = 0
         
         with st.expander("📥 Data Processing Details", expanded=False):
             for file_idx, (file_name, raw_df) in enumerate(file_dfs):
@@ -1133,6 +1215,15 @@ if uploaded_files and len(uploaded_files) > 0:
                 all_precip.extend(precip_arr.tolist())
                 all_evap.extend(evap_arr.tolist())
                 all_flow.extend(flow_arr.tolist())
+                if len(flow_arr) > 0:
+                    preanalysis_file_boundaries.append({
+                        'start_idx': preanalysis_offset,
+                        'end_idx': preanalysis_offset + len(flow_arr) - 1,
+                        'peak_idx': preanalysis_offset + int(np.argmax(flow_arr)),
+                        'peak_flow': float(np.max(flow_arr)),
+                        'file_name': file_name,
+                    })
+                preanalysis_offset += len(flow_arr)
                 
                 st.write(f"  ✅ Detected **{len(flood_events)}** flood event(s)")
         
@@ -1196,15 +1287,18 @@ if uploaded_files and len(uploaded_files) > 0:
         preanalyzer = SemanticPreAnalyzer(area=catchment_area, timestep=user_timestep)
         
         is_multi_file_mode = upload_mode == "Multi-File (One Event Per File)"
+        analysis_event_boundaries = preanalysis_file_boundaries if is_multi_file_mode else None
         
         with st.spinner("🤖 AI is analyzing flood event semantic encoding..."):
             analysis_result = preanalyzer.analyze(
                 all_flow_arr, all_precip_arr, dates_series, call_minimax, 
-                multi_file_mode=is_multi_file_mode
+                multi_file_mode=is_multi_file_mode,
+                event_boundaries=analysis_event_boundaries
             )
         
         semantic_codes = analysis_result['semantic_codes']
         quality_metrics = analysis_result['quality']
+        quality_level_en = format_quality_level_en(quality_metrics)
         
         st.success(f"✅ AI Agent completed semantic encoding: {len(semantic_codes)} flood event(s)")
         
@@ -1213,7 +1307,7 @@ if uploaded_files and len(uploaded_files) > 0:
             col1.metric("Data Completeness", f"{quality_metrics.completeness:.1f}%")
             col2.metric("Time Continuity", f"{quality_metrics.continuity:.1f}%")
             col3.metric("Precip-Runoff Correlation", f"{quality_metrics.correlation:.3f}")
-            col4.metric("Quality Level", quality_metrics.quality_level)
+            col4.metric("Quality Level", quality_level_en)
             
             if quality_metrics.issues:
                 st.warning("Data issues: " + "; ".join(quality_metrics.issues))
@@ -1667,10 +1761,10 @@ if uploaded_files and len(uploaded_files) > 0:
                         calib_rmse_list.append(result['rmse'])
                         calib_pbias_list.append(result['pbias'])
                 if calib_nse_list:
-                    calibration_results[model_name]['nse'] = np.mean(calib_nse_list)
-                    calibration_results[model_name]['kge'] = np.mean(calib_kge_list)
-                    calibration_results[model_name]['rmse'] = np.mean(calib_rmse_list)
-                    calibration_results[model_name]['pbias'] = np.mean(calib_pbias_list)
+                    calibration_results[model_name]['nse'] = mean_valid_metric(calib_nse_list)
+                    calibration_results[model_name]['kge'] = mean_valid_metric(calib_kge_list)
+                    calibration_results[model_name]['rmse'] = mean_valid_metric(calib_rmse_list)
+                    calibration_results[model_name]['pbias'] = mean_valid_metric(calib_pbias_list)
             
             # Initialize XGB correction data dictionary (for subsequent plotting)
             xgb_correction_data = {}
@@ -1748,7 +1842,14 @@ if uploaded_files and len(uploaded_files) > 0:
                             st.warning("⚠️ Fewer than 3 calibration events, insufficient data to train XGB error correction model.")
                             xgb_correction_data = {}
                         else:
-                            corrector = ErrorCorrector(xgb_params=xgb_params)
+                            lower_q = (1.0 - xgb_clip_quantile) / 2.0
+                            upper_q = 1.0 - lower_q
+                            corrector = ErrorCorrector(
+                                xgb_params=xgb_params,
+                                enable_error_clipping=xgb_enable_error_clipping,
+                                error_clip_quantiles=(lower_q, upper_q),
+                                max_correction_ratio=xgb_max_correction_ratio,
+                            )
                             corrector.train_by_events(
                                 train_precip_events, train_flow_events, train_sim_events, test_event_ratio=0.0
                             )
@@ -1789,6 +1890,7 @@ if uploaded_files and len(uploaded_files) > 0:
                                     
                                     nse_before = calc_nse(flow_plot, simulated_plot)
                                     nse_after = calc_nse(flow_plot, corrected_plot)
+                                    kge_after = calc_kge(flow_plot, corrected_plot)
                                     rmse_after = calc_rmse(flow_plot, corrected_plot)
                                     pbias_after = calc_pbias(flow_plot, corrected_plot)
                                     
@@ -1796,7 +1898,7 @@ if uploaded_files and len(uploaded_files) > 0:
                                         'corrected': corrected_plot,
                                         'flow': flow_plot,
                                         'nse': nse_after,
-                                        'kge': nse_after,
+                                        'kge': kge_after,
                                         'rmse': rmse_after,
                                         'pbias': pbias_after,
                                         'best_model': best_name,
@@ -1837,7 +1939,7 @@ if uploaded_files and len(uploaded_files) > 0:
             n_cols = min(2, n_files)
             n_rows = (n_files + n_cols - 1) // n_cols
             
-            fig, axes = plt.subplots(n_rows, n_cols, figsize=(16, 5 * n_rows))
+            fig, axes = plt.subplots(n_rows, n_cols, figsize=(18, 5.8 * n_rows), dpi=PLOT_DPI)
             if n_files == 1:
                 axes = [axes]
             else:
@@ -1886,73 +1988,72 @@ if uploaded_files and len(uploaded_files) > 0:
                 ax2.tick_params(axis='y', labelcolor='black', labelsize=11)
                 ax2.invert_yaxis()
                 
-            xlabel_text = "Time (days)" if user_timestep == 'daily' else "Time (h)"
+                xlabel_text = "Time (days)" if user_timestep == 'daily' else "Time (h)"
                 
-            simulated_list = []
-            model_names = []
-            nse_list = []
-            for model_name in file_simulation_results:
-                if file_name in file_simulation_results.get(model_name, {}):
-                    result = file_simulation_results[model_name][file_name]
-                    simulated = result.get('simulated')
-                    if simulated is None or len(simulated) == 0:
-                        st.warning(f"⚠️ {file_name}/{model_name}: Simulation result is empty, skipping plot")
-                        continue
-                    simulated = np.nan_to_num(simulated, nan=0.0, posinf=0.0, neginf=0.0)
-                    # Exclude warm-up period data
-                    if warmup_steps > 0 and len(simulated) > warmup_steps:
-                        simulated_plot = simulated[warmup_steps:]
-                    else:
-                        simulated_plot = simulated
-                    simulated_list.append(simulated_plot)
-                    model_names.append(model_name)
-                    nse_list.append(result['nse'])
-                    
-                    color = model_colors.get(model_name, '#999999')
-                    calib_nse = calibration_results.get(model_name, {}).get('nse', result['nse'])
-                    label = f"{model_name} (Event NSE={result['nse']:.3f})"
-                    ax.plot(simulated_plot, color=color, label=label, linewidth=2, alpha=0.8)
-                    
-                    summary_data.append({
-                        "File": file_name,
-                        "Event": "Full Event",
-                        "Type": event_type,
-                        "Model": model_name,
+                simulated_list = []
+                model_names = []
+                nse_list = []
+                for model_name in file_simulation_results:
+                    if file_name in file_simulation_results.get(model_name, {}):
+                        result = file_simulation_results[model_name][file_name]
+                        simulated = result.get('simulated')
+                        if simulated is None or len(simulated) == 0:
+                            st.warning(f"⚠️ {file_name}/{model_name}: Simulation result is empty, skipping plot")
+                            continue
+                        simulated = np.nan_to_num(simulated, nan=0.0, posinf=0.0, neginf=0.0)
+                        # Exclude warm-up period data
+                        if warmup_steps > 0 and len(simulated) > warmup_steps:
+                            simulated_plot = simulated[warmup_steps:]
+                        else:
+                            simulated_plot = simulated
+                        simulated_list.append(simulated_plot)
+                        model_names.append(model_name)
+                        nse_list.append(result['nse'])
+                        
+                        color = model_colors.get(model_name, '#999999')
+                        label = f"{model_name} (NSE={result['nse']:.3f})"
+                        ax.plot(simulated_plot, color=color, label=label, linewidth=2, alpha=0.85)
+                        
+                        summary_data.append({
+                            "File": file_name,
+                            "Event": "Full Event",
+                            "Type": event_type,
+                            "Model": model_name,
                             "NSE": result['nse'],
                             "KGE": result.get('kge', result['nse']),
                             "RMSE": result['rmse'],
                             "PBIAS": result['pbias']
                         })
-                        
-                    if file_name not in all_results:
-                        all_results[file_name] = {}
-                    if "Full Event" not in all_results[file_name]:
-                        all_results[file_name]["Full Event"] = []
-                    all_results[file_name]["Full Event"].append(result)
+                            
+                        if file_name not in all_results:
+                            all_results[file_name] = {}
+                        if "Full Event" not in all_results[file_name]:
+                            all_results[file_name]["Full Event"] = []
+                        all_results[file_name]["Full Event"].append(result)
+                    
+                if len(simulated_list) >= 2 and len(flow_arr_plot) == len(simulated_list[0]):
+                    weights = calc_bma_weights(nse_list)
+                    bma_result = apply_bma_ensemble(simulated_list, weights)
+                    bma_nse = calc_nse(flow_arr_plot, bma_result)
+                    bma_kge = calc_kge(flow_arr_plot, bma_result)
+                    bma_rmse = calc_rmse(flow_arr_plot, bma_result)
+                    bma_pbias = calc_pbias(flow_arr_plot, bma_result)
+                    label = f'BMA Ensemble (NSE={bma_nse:.3f})'
+                    ax.plot(bma_result, color='#9b59b6', linestyle='--', 
+                            label=label, linewidth=2.4, alpha=0.9)
+                    
+                    summary_data.append({
+                        "File": file_name,
+                        "Event": "Full Event",
+                        "Type": event_type,
+                        "Model": "BMA Ensemble",
+                        "NSE": bma_nse,
+                        "KGE": bma_kge,
+                        "RMSE": bma_rmse,
+                        "PBIAS": bma_pbias
+                    })
                 
-            if len(simulated_list) >= 2 and len(flow_arr_plot) == len(simulated_list[0]):
-                weights = calc_bma_weights(nse_list)
-                bma_result = apply_bma_ensemble(simulated_list, weights)
-                bma_nse = calc_nse(flow_arr_plot, bma_result)
-                bma_rmse = calc_rmse(flow_arr_plot, bma_result)
-                bma_pbias = calc_pbias(flow_arr_plot, bma_result)
-                weights_str = format_weights_string(model_names, weights)
-                label = f'BMA Ensemble (NSE={bma_nse:.3f}) [{weights_str}]'
-                ax.plot(bma_result, color='#9b59b6', linestyle='--', 
-                        label=label, linewidth=2.5, alpha=0.9)
-                
-                summary_data.append({
-                    "File": file_name,
-                    "Event": "Full Event",
-                    "Type": event_type,
-                    "Model": "BMA Ensemble",
-                    "NSE": bma_nse,
-                    "KGE": bma_nse,
-                    "RMSE": bma_rmse,
-                    "PBIAS": bma_pbias
-                })
-            
-            # Add XGB error correction curve
+                # Add XGB error correction curve
                 xgb_in_data = xgb_correction_data and file_name in xgb_correction_data
                 if xgb_in_data:
                     xgb_data = xgb_correction_data[file_name]
@@ -1963,9 +2064,9 @@ if uploaded_files and len(uploaded_files) > 0:
                         xgb_rmse = xgb_data['rmse']
                         xgb_pbias = xgb_data['pbias']
                         xgb_model = xgb_data['best_model']
-                        label = f'{xgb_model}-XGB (NSE={xgb_nse:.3f})'
+                        label = f'XGB Corrected ({xgb_model}, NSE={xgb_nse:.3f})'
                         ax.plot(corrected_plot, color='#f39c12', linestyle='-.', 
-                                label=label, linewidth=2.5, alpha=0.9)
+                                label=label, linewidth=2.4, alpha=0.95)
                         
                         summary_data.append({
                             "File": file_name,
@@ -1979,23 +2080,33 @@ if uploaded_files and len(uploaded_files) > 0:
                         })
                 
                 ax.set_title(f"{file_name} [{event_type}]", fontsize=14)
-                ax.legend(fontsize=9, loc='upper right')
                 ax.grid(True, alpha=0.3)
                 ax.set_xlabel(xlabel_text, fontsize=12)
                 ax.set_ylabel(r"Flow ($m^3/s$)", fontsize=12)
+                
+                handles, labels = ax.get_legend_handles_labels()
+                precip_handles, precip_labels = ax2.get_legend_handles_labels()
+                ax.legend(
+                    handles + precip_handles,
+                    labels + precip_labels,
+                    fontsize=8,
+                    loc='upper right',
+                    frameon=True,
+                    framealpha=0.85
+                )
             
             for idx in range(n_files, len(axes)):
                 axes[idx].axis('off')
             
             plt.tight_layout()
-            st.pyplot(fig)
+            st.pyplot(fig, use_container_width=True)
             
             # 保存图像按钮
             col1, col2 = st.columns([1, 5])
             with col1:
                 import io
                 buf = io.BytesIO()
-                fig.savefig(buf, format='png', dpi=300, bbox_inches='tight')
+                fig.savefig(buf, format='png', dpi=EXPORT_DPI, bbox_inches='tight')
                 buf.seek(0)
                 st.download_button(
                     "💾 Download Image",
@@ -2038,10 +2149,10 @@ if uploaded_files and len(uploaded_files) > 0:
                         for model_name in model_names_for_comparison:
                             model_calib_data = [d for d in calib_data if d['Model'] == model_name]
                             if model_calib_data:
-                                calib_nse = np.mean([d['NSE'] for d in model_calib_data])
-                                calib_kge = np.mean([d['KGE'] for d in model_calib_data])
-                                calib_rmse = np.mean([d['RMSE'] for d in model_calib_data])
-                                calib_pbias = np.mean([d['PBIAS'] for d in model_calib_data])
+                                calib_nse = mean_valid_metric([d['NSE'] for d in model_calib_data])
+                                calib_kge = mean_valid_metric([d['KGE'] for d in model_calib_data])
+                                calib_rmse = mean_valid_metric([d['RMSE'] for d in model_calib_data])
+                                calib_pbias = mean_valid_metric([d['PBIAS'] for d in model_calib_data])
                                 st.markdown(f"**{model_name}**")
                                 st.metric("NSE", f"{calib_nse:.4f}")
                                 st.metric("KGE", f"{calib_kge:.4f}")
@@ -2054,10 +2165,10 @@ if uploaded_files and len(uploaded_files) > 0:
                         for model_name in model_names_for_comparison:
                             model_valid_data = [d for d in valid_data if d['Model'] == model_name]
                             if model_valid_data:
-                                valid_nse = np.mean([d['NSE'] for d in model_valid_data])
-                                valid_kge = np.mean([d['KGE'] for d in model_valid_data])
-                                valid_rmse = np.mean([d['RMSE'] for d in model_valid_data])
-                                valid_pbias = np.mean([d['PBIAS'] for d in model_valid_data])
+                                valid_nse = mean_valid_metric([d['NSE'] for d in model_valid_data])
+                                valid_kge = mean_valid_metric([d['KGE'] for d in model_valid_data])
+                                valid_rmse = mean_valid_metric([d['RMSE'] for d in model_valid_data])
+                                valid_pbias = mean_valid_metric([d['PBIAS'] for d in model_valid_data])
                                 st.markdown(f"**{model_name}**")
                                 st.metric("NSE", f"{valid_nse:.4f}")
                                 st.metric("KGE", f"{valid_kge:.4f}")
@@ -2066,17 +2177,26 @@ if uploaded_files and len(uploaded_files) > 0:
                                 st.divider()
                     
                     with col3:
-                        st.markdown("**XGB Correction Average**")
                         xgb_data = [d for d in summary_data if '-XGB' in d['Model']]
                         if xgb_data:
-                            xgb_nse = np.mean([d['NSE'] for d in xgb_data])
-                            xgb_kge = np.mean([d['KGE'] for d in xgb_data])
-                            xgb_rmse = np.mean([d['RMSE'] for d in xgb_data])
-                            xgb_pbias = np.mean([d['PBIAS'] for d in xgb_data])
-                            st.metric("NSE", f"{xgb_nse:.4f}")
-                            st.metric("KGE", f"{xgb_kge:.4f}")
-                            st.metric("RMSE", f"{xgb_rmse:.4f}")
-                            st.metric("PBIAS", f"{xgb_pbias:.2f}%")
+                            xgb_groups = [
+                                ("XGB Calibration Summary", [d for d in xgb_data if d['Type'] == 'Calibration']),
+                                ("XGB Validation Summary", [d for d in xgb_data if d['Type'] == 'Validation']),
+                                ("XGB Overall Summary", xgb_data),
+                            ]
+                            for title, group_data in xgb_groups:
+                                if not group_data:
+                                    continue
+                                xgb_nse = mean_valid_metric([d['NSE'] for d in group_data])
+                                xgb_kge = mean_valid_metric([d['KGE'] for d in group_data])
+                                xgb_rmse = mean_valid_metric([d['RMSE'] for d in group_data])
+                                xgb_pbias = mean_valid_metric([d['PBIAS'] for d in group_data])
+                                st.markdown(f"**{title} (n={len(group_data)})**")
+                                st.metric("NSE", f"{xgb_nse:.4f}")
+                                st.metric("KGE", f"{xgb_kge:.4f}")
+                                st.metric("RMSE", f"{xgb_rmse:.4f}")
+                                st.metric("PBIAS", f"{xgb_pbias:.2f}%")
+                                st.divider()
                         else:
                             st.info("No XGB data")
                 
@@ -2103,7 +2223,7 @@ if uploaded_files and len(uploaded_files) > 0:
                     warmup_hours,
                     xgb_results
                 )
-            st.markdown(multifile_report)
+            render_copyable_report(multifile_report, key="multifile_ai_report_copyable")
             
             if not multifile_report.startswith("[ERROR]"):
                 report_filename = f"multifile_report_{datetime.now().strftime('%Y%m%d_%H%M')}.md"
@@ -2302,7 +2422,7 @@ if uploaded_files and len(uploaded_files) > 0:
                 all_flow_arr_plot = all_flow_arr
                 all_precip_arr_plot = all_precip_arr
             
-            fig, ax = plt.subplots(figsize=(14, 5), dpi=150)
+            fig, ax = plt.subplots(figsize=(16, 5.8), dpi=PLOT_DPI)
             
             ax.plot(all_flow_arr_plot, "k-", label="Observed", linewidth=2.5)
             
@@ -2342,12 +2462,13 @@ if uploaded_files and len(uploaded_files) > 0:
                     "PBIAS": result['pbias']
                 })
             
-            if len(simulated_list) >= 2:
+            if len(simulated_list) >= 2 and len(all_flow_arr_plot) == len(simulated_list[0]):
                 weights = calc_bma_weights(nse_list)
                 bma_result = apply_bma_ensemble(simulated_list, weights)
-                bma_nse = calc_nse(all_flow_arr, bma_result)
-                bma_rmse = calc_rmse(all_flow_arr, bma_result)
-                bma_pbias = calc_pbias(all_flow_arr, bma_result)
+                bma_nse = calc_nse(all_flow_arr_plot, bma_result)
+                bma_kge = calc_kge(all_flow_arr_plot, bma_result)
+                bma_rmse = calc_rmse(all_flow_arr_plot, bma_result)
+                bma_pbias = calc_pbias(all_flow_arr_plot, bma_result)
                 weights_str = format_weights_string(model_names, weights)
                 label = f'BMA Ensemble (NSE={bma_nse:.3f}) [{weights_str}]'
                 ax.plot(bma_result, color='#9b59b6', linestyle='--', 
@@ -2359,7 +2480,7 @@ if uploaded_files and len(uploaded_files) > 0:
                     "Type": "Calibration",
                     "Model": "BMA Ensemble",
                     "NSE": bma_nse,
-                    "KGE": bma_nse,
+                    "KGE": bma_kge,
                     "RMSE": bma_rmse,
                     "PBIAS": bma_pbias
                 })
@@ -2371,7 +2492,7 @@ if uploaded_files and len(uploaded_files) > 0:
             ax.set_ylabel(r"Flow ($m^3/s$)", fontsize=12)
             
             plt.tight_layout()
-            st.pyplot(fig)
+            st.pyplot(fig, use_container_width=True)
             
             # Mark identified flood events
             if preanalysis_result and hasattr(preanalysis_result, 'selected_events') and preanalysis_result.selected_events:
@@ -2389,7 +2510,7 @@ if uploaded_files and len(uploaded_files) > 0:
                 all_flow_arr_plot = all_flow_arr
                 all_precip_arr_plot = all_precip_arr
             
-            fig, ax = plt.subplots(figsize=(14, 5), dpi=150)
+            fig, ax = plt.subplots(figsize=(16, 5.8), dpi=PLOT_DPI)
             
             ax.plot(all_flow_arr_plot, "k-", label="Observed", linewidth=2.5)
             
@@ -2429,12 +2550,13 @@ if uploaded_files and len(uploaded_files) > 0:
                     "PBIAS": result['pbias']
                 })
             
-            if len(simulated_list) >= 2:
+            if len(simulated_list) >= 2 and len(all_flow_arr_plot) == len(simulated_list[0]):
                 weights = calc_bma_weights(nse_list)
                 bma_result = apply_bma_ensemble(simulated_list, weights)
-                bma_nse = calc_nse(all_flow_arr, bma_result)
-                bma_rmse = calc_rmse(all_flow_arr, bma_result)
-                bma_pbias = calc_pbias(all_flow_arr, bma_result)
+                bma_nse = calc_nse(all_flow_arr_plot, bma_result)
+                bma_kge = calc_kge(all_flow_arr_plot, bma_result)
+                bma_rmse = calc_rmse(all_flow_arr_plot, bma_result)
+                bma_pbias = calc_pbias(all_flow_arr_plot, bma_result)
                 weights_str = format_weights_string(model_names, weights)
                 label = f'BMA Ensemble (NSE={bma_nse:.3f}) [{weights_str}]'
                 ax.plot(bma_result, color='#9b59b6', linestyle='--', 
@@ -2446,7 +2568,7 @@ if uploaded_files and len(uploaded_files) > 0:
                     "Type": "Calibration",
                     "Model": "BMA Ensemble",
                     "NSE": bma_nse,
-                    "KGE": bma_nse,
+                    "KGE": bma_kge,
                     "RMSE": bma_rmse,
                     "PBIAS": bma_pbias
                 })
@@ -2458,14 +2580,14 @@ if uploaded_files and len(uploaded_files) > 0:
             ax.set_ylabel(r"Flow ($m^3/s$)", fontsize=12)
             
             plt.tight_layout()
-            st.pyplot(fig)
+            st.pyplot(fig, use_container_width=True)
         
             # Save image button
             col1, col2 = st.columns([1, 5])
             with col1:
                 import io
                 buf = io.BytesIO()
-                fig.savefig(buf, format='png', dpi=300, bbox_inches='tight')
+                fig.savefig(buf, format='png', dpi=EXPORT_DPI, bbox_inches='tight')
                 buf.seek(0)
                 st.download_button(
                     "💾 Download Image",
@@ -2527,7 +2649,7 @@ if uploaded_files and len(uploaded_files) > 0:
                         x = np.arange(len(all_flow_arr))
                         xlabel_text = "Time (days)" if user_timestep == 'daily' else "Time (h)"
                         
-                        fig_ec, ax_ec = plt.subplots(figsize=(14, 5), dpi=150)
+                        fig_ec, ax_ec = plt.subplots(figsize=(16, 5.8), dpi=PLOT_DPI)
                         ax_ec.plot(x, all_flow_arr, 'k-', linewidth=2, label='Observed Flow', alpha=0.8)
                         ax_ec.plot(x, correction_result['simulated'], 'b--', linewidth=1.5,
                                  label=f"Original ({best_name})", alpha=0.6)
@@ -2538,7 +2660,7 @@ if uploaded_files and len(uploaded_files) > 0:
                         ax_ec.set_title(f"{best_name} + XGB Error Correction - Flow Comparison", fontsize=14)
                         ax_ec.legend(fontsize=10, loc='upper right')
                         ax_ec.grid(True, alpha=0.3)
-                        st.pyplot(fig_ec)
+                        st.pyplot(fig_ec, use_container_width=True)
                         
                         corrected_df = pd.DataFrame({
                             'Time Step': x,
@@ -2571,7 +2693,7 @@ if uploaded_files and len(uploaded_files) > 0:
                             call_minimax,
                             warmup_hours
                         )
-                    st.markdown(multifile_report)
+                    render_copyable_report(multifile_report, key="single_mode_multifile_ai_report_copyable")
                     
                     if not multifile_report.startswith("[ERROR]"):
                         report_filename = f"multifile_report_{datetime.now().strftime('%Y%m%d_%H%M')}.md"
@@ -2583,7 +2705,7 @@ if uploaded_files and len(uploaded_files) > 0:
                         )
                 except NameError:
                     pass
-                st.markdown(multifile_report)
+                render_copyable_report(multifile_report, key="single_mode_multifile_ai_report_copyable_fallback")
                 
                 if not multifile_report.startswith("[ERROR]"):
                     report_filename = f"multifile_report_{datetime.now().strftime('%Y%m%d_%H%M')}.md"

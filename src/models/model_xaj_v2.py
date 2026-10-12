@@ -1,17 +1,23 @@
 # -*- coding: utf-8 -*-
 """
 新安江模型V2适配器
-使用 tests/models/xaj.py 中的纯 NumPy 实现（高性能版本）
+
+算法核心优先使用包内实现 ``src/hydro/xaj_numpy.py``，
+不再依赖 ``tests/`` 目录与进程工作目录；若包内实现不可用，
+则回退到动态加载 ``tests/models/xaj.py``，最后使用内置兜底参数边界。
 """
 import os
 import sys
+import importlib.util
 from pathlib import Path
 from typing import Dict, Tuple, Optional
 import numpy as np
 
 from .base_model import BaseModel
 
-# 尝试导入 tests 中的纯 NumPy 版本
+# ------------------------------------------------------------------
+# 核心算法导入
+# ------------------------------------------------------------------
 XAJ_NUMPY_AVAILABLE = False
 run_xaj_model = None
 XAJ_PARAM_BOUNDS = None
@@ -19,6 +25,21 @@ XAJ_PARAM_BOUNDS = None
 def _import_xaj_numpy():
     global XAJ_NUMPY_AVAILABLE, run_xaj_model, XAJ_PARAM_BOUNDS
     
+    # 1) 包内实现（推荐，稳定且不依赖 cwd）
+    try:
+        from src.hydro.xaj_numpy import (
+            run_xaj_model as _run_xaj_model,
+            XAJ_PARAM_BOUNDS as _bounds,
+        )
+        run_xaj_model = _run_xaj_model
+        XAJ_PARAM_BOUNDS = _bounds
+        XAJ_NUMPY_AVAILABLE = True
+        print("[INFO] XAJ 包内实现加载成功")
+        return
+    except Exception as e:
+        print(f"[WARN] XAJ 包内实现导入失败: {e}")
+
+    # 2) 回退：动态加载 tests/models/xaj.py
     possible_paths = [
         os.path.join(os.getcwd(), "tests", "models", "xaj.py"),
         os.path.join(os.path.dirname(__file__), "..", "..", "tests", "models", "xaj.py"),
@@ -41,7 +62,6 @@ def _import_xaj_numpy():
     
     XAJ_NUMPY_AVAILABLE = False
 
-import importlib.util
 _import_xaj_numpy()
 
 

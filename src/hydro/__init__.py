@@ -3,7 +3,7 @@
 水文模型简化实现模块
 从tests/models迁移，独立于tests目录
 """
-from .xaj_simple import run_xaj_model, XAJ_PARAM_BOUNDS
+from .xaj_numpy import run_xaj_model, XAJ_PARAM_BOUNDS
 from .tank_simple import run_tank_model, TANK_PARAM_BOUNDS
 from .hbv_simple import run_hbv_model, HBV_PARAM_BOUNDS
 

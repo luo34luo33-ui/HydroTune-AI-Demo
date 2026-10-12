@@ -42,7 +42,7 @@ ENV/
 Thumbs.db
 
 # Streamlit
-.streamlit/secret.toml
+.streamlit/secrets.toml
 
 # Temporary files
 *.tmp
@@ -61,3 +61,36 @@ result/
 
 # Excel temp files
 ~$*.xlsx
+
+# ==========================================================
+# 以下内容不推送到公开仓库（Streamlit Cloud 部署精简）
+# ==========================================================
+
+# 论文、演示稿与文档产物
+*.docx
+*.doc
+*.pptx
+*.pptx.inspect.ndjson
+*.pdf
+论文粗框架.md
+多预分析报告.md
+Figure_Drawing_Prompts.md
+XGB_ERROR_CORRECTION.md
+editable_hydrological_models_overview/
+
+# 图片与中间产物
+*_hydrograph.png
+semantic_encoding_*.json
+
+# 测试目录（模型核心已迁至 src/hydro/，运行不依赖 tests/）
+tests/
+
+# 示例数据与开发辅助目录
+example_data/
+docs/
+skill-development/
+result/
+.agents/
+.codebuddy/
+.devcontainer/
+.ppt_build/

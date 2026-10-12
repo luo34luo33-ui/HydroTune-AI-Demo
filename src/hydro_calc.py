@@ -90,7 +90,7 @@ def calc_kge(observed: np.ndarray, simulated: np.ndarray) -> float:
     obs_std = np.std(obs)
     sim_std = np.std(sim)
     
-    if obs_std == 0 or sim_std == 0:
+    if obs_std == 0 or sim_std == 0 or obs_mean == 0:
         return np.nan
     
     r = np.corrcoef(obs, sim)[0, 1]
@@ -631,32 +631,34 @@ def get_model_param_info(model_name: str) -> Dict[str, Dict]:
     """
     param_info = {
         'Tank Model': {
-            'k1': {'description': '快速流调蓄系数', 'unit': '-', 'bounds': (0.01, 0.3)},
-            'k2': {'description': '慢速流调蓄系数（基流）', 'unit': '-', 'bounds': (0.001, 0.05)},
-            'c': {'description': '产流系数', 'unit': '-', 'bounds': (0.01, 0.3)},
+            'k1': {'description': 'Fast-flow recession coefficient', 'unit': '-', 'bounds': (0.01, 0.3)},
+            'k2': {'description': 'Slow-flow recession coefficient (baseflow)', 'unit': '-', 'bounds': (0.001, 0.05)},
+            'c': {'description': 'Runoff generation coefficient', 'unit': '-', 'bounds': (0.01, 0.3)},
         },
         'HBV Model': {
-            'fc': {'description': '田间持水量', 'unit': 'mm', 'bounds': (50.0, 500.0)},
-            'beta': {'description': '形状参数', 'unit': '-', 'bounds': (1.0, 5.0)},
-            'k0': {'description': '快速出流系数', 'unit': '-', 'bounds': (0.01, 0.5)},
-            'k1': {'description': '慢速出流系数', 'unit': '-', 'bounds': (0.001, 0.1)},
-            'lp': {'description': '蒸散发限制系数', 'unit': '-', 'bounds': (0.3, 1.0)},
+            'fc': {'description': 'Field capacity', 'unit': 'mm', 'bounds': (50.0, 500.0)},
+            'beta': {'description': 'Runoff nonlinearity shape parameter', 'unit': '-', 'bounds': (1.0, 5.0)},
+            'k0': {'description': 'Fast runoff recession coefficient', 'unit': '-', 'bounds': (0.01, 0.5)},
+            'k1': {'description': 'Slow runoff recession coefficient', 'unit': '-', 'bounds': (0.001, 0.1)},
+            'lp': {'description': 'Evapotranspiration limit coefficient', 'unit': '-', 'bounds': (0.3, 1.0)},
         },
         'XAJ Model': {
-            'k': {'description': '蒸散发系数', 'unit': '-', 'bounds': (0.5, 1.5)},
-            'b': {'description': '蓄水容量曲线指数', 'unit': '-', 'bounds': (0.1, 0.5)},
-            'im': {'description': '不透水面积比例', 'unit': '-', 'bounds': (0.01, 0.1)},
-            'um': {'description': '上层土壤蓄水容量', 'unit': 'mm', 'bounds': (10, 50)},
-            'lm': {'description': '下层土壤蓄水容量', 'unit': 'mm', 'bounds': (50, 150)},
-            'dm': {'description': '深层土壤蓄水容量', 'unit': 'mm', 'bounds': (10, 100)},
-            'c': {'description': '深层蒸散发系数', 'unit': '-', 'bounds': (0.01, 0.2)},
-            'sm': {'description': '自由水蓄水容量', 'unit': 'mm', 'bounds': (10, 80)},
-            'ex': {'description': '自由水容量曲线指数', 'unit': '-', 'bounds': (1.0, 2.0)},
-            'ki': {'description': '壤中流出流系数', 'unit': '-', 'bounds': (0.3, 0.7)},
-            'kg': {'description': '地下水出流系数', 'unit': '-', 'bounds': (0.01, 0.2)},
-            'cs': {'description': '流域汇流系数', 'unit': '-', 'bounds': (0.1, 0.5)},
-            'l': {'description': '滞后时间', 'unit': 'h', 'bounds': (0, 24)},
-            'xg': {'description': '地下水消退系数', 'unit': '-', 'bounds': (0.9, 0.999)},
+            'k': {'description': 'Evapotranspiration coefficient', 'unit': '-', 'bounds': (0.5, 1.5)},
+            'b': {'description': 'Tension-water capacity curve exponent', 'unit': '-', 'bounds': (0.1, 0.5)},
+            'im': {'description': 'Impervious area ratio', 'unit': '-', 'bounds': (0.01, 0.1)},
+            'um': {'description': 'Upper-layer soil water capacity', 'unit': 'mm', 'bounds': (10, 50)},
+            'lm': {'description': 'Lower-layer soil water capacity', 'unit': 'mm', 'bounds': (50, 150)},
+            'dm': {'description': 'Deep-layer soil water capacity', 'unit': 'mm', 'bounds': (10, 100)},
+            'c': {'description': 'Deep-layer evapotranspiration coefficient', 'unit': '-', 'bounds': (0.01, 0.2)},
+            'sm': {'description': 'Free-water storage capacity', 'unit': 'mm', 'bounds': (10, 80)},
+            'ex': {'description': 'Free-water capacity curve exponent', 'unit': '-', 'bounds': (1.0, 2.0)},
+            'ki': {'description': 'Interflow outflow coefficient', 'unit': '-', 'bounds': (0.3, 0.7)},
+            'kg': {'description': 'Groundwater outflow coefficient', 'unit': '-', 'bounds': (0.01, 0.2)},
+            'cs': {'description': 'Watershed routing coefficient', 'unit': '-', 'bounds': (0.1, 0.5)},
+            'l': {'description': 'Lag time', 'unit': 'h', 'bounds': (0, 24)},
+            'xg': {'description': 'Groundwater recession coefficient', 'unit': '-', 'bounds': (0.9, 0.999)},
+            'k_routing': {'description': 'Muskingum travel-time parameter', 'unit': 'time step', 'bounds': (0.1, 10.0)},
+            'x_routing': {'description': 'Muskingum weighting parameter', 'unit': '-', 'bounds': (0.0, 0.5)},
         },
     }
     
@@ -678,14 +680,15 @@ def generate_param_table(model_name: str, params: Dict[str, float]) -> pd.DataFr
     
     rows = []
     for key, value in params.items():
-        info = param_info.get(key, {'description': '-', 'unit': '-', 'bounds': (0, 1)})
+        info = param_info.get(str(key).lower(), {'description': '-', 'unit': '-', 'bounds': None})
         bounds = info.get('bounds', (0, 1))
+        bounds_text = f"{bounds[0]:.3f} ~ {bounds[1]:.3f}" if bounds else "-"
         rows.append({
-            '参数名': key,
-            '物理意义': info.get('description', '-'),
-            '单位': info.get('unit', '-'),
-            '取值范围': f"{bounds[0]:.3f} ~ {bounds[1]:.3f}",
-            '最优值': f"{value:.6f}"
+            'Parameter': key,
+            'Description': info.get('description', '-'),
+            'Unit': info.get('unit', '-'),
+            'Valid Range': bounds_text,
+            'Calibrated Value': f"{value:.6f}"
         })
     
     return pd.DataFrame(rows)
