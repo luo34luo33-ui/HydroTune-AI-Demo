@@ -236,7 +236,7 @@ def test_spatial_only_confirmation_with_integer_dem(config):
     assert not state['space_error']
     assert charts_for(state,'data')[0]['title']=='流域概况'
     assert all('name' in trace for trace in charts_for(state,'data')[0]['figure']['data'])
-    assert '流域概况' in str(render(state,'data',None,[], 'all',None,None,'NSE'))
+    assert '流域概况' in str(render(state,'data',None,[], 'all','NSE'))
     with pytest.raises(ValueError,match='确认并分析'):
         tasks.submit(state,'simulate')
     tasks.configure(state,{**config,'area':200})
@@ -262,3 +262,60 @@ def test_deepseek_key_is_scoped_to_current_request():
             assert call_minimax('connection test')=='OK'
         assert request.call_args.args[2]=='temporary-key'
         assert get_llm_config()['api_key']==''
+
+
+def test_reset_during_task_clears_own_session_without_old_result(files,config):
+    app=create_app()
+    with app.server.test_request_context('/'):
+        other=tasks.current()
+        other['reports']['report']='another visitor'
+    started,finish=threading.Event(),threading.Event()
+    original=analysis.preprocess
+    def delayed(*args):
+        started.set()
+        assert finish.wait(10)
+        return original(*args)
+    with app.server.test_request_context('/'):
+        old=tasks.current()
+        tasks.configure(old,config)
+        old['llm']={'api_key':'reset-this-key'}
+        old['pending']={'file':dict(kind='hydro',name=files[0][0],content=files[0][1])}
+        with patch.object(analysis,'preprocess',side_effect=delayed):
+            tasks.submit(old,'confirm')
+            assert started.wait(10)
+            fresh=tasks.reset()
+            assert fresh is tasks.current()
+            assert old not in list(tasks.sessions.values())
+            assert not fresh['pending'] and not fresh['llm'] and fresh['config'] is None
+            finish.set()
+            tasks.workers.submit(lambda:None).result(timeout=15)
+        assert fresh['prepared'] is None and fresh['phase']=='等待确认数据'
+        assert not fresh['busy'] and not fresh['reports'] and not fresh['posts']
+        assert other['reports']['report']=='another visitor'
+
+
+def test_offline_exhibition_export_uses_real_results_without_credentials(config):
+    from test_dash_features import _analysis_inputs
+    from src.dash_ui.snapshot import build_snapshot
+    files,_,_= _analysis_inputs()
+    config['mode']=analysis.UPLOAD_MODES[2]
+    config['models']=ModelRegistry.list_models()
+    prepared=analysis.preprocess(files,config)
+    simulation=analysis.simulate(prepared,config,imported_parameters())
+    posts={kind:analysis.postprocess(prepared,simulation,config,kind) for kind in ('bma','xgb')}
+    app=create_app()
+    with app.server.test_request_context('/'):
+        state=tasks.current()
+        state.update(prepared=prepared,simulation=simulation,posts=posts,confirmed_config=config,
+                     llm={'api_key':'NEVER-EXPORT'},pending={'raw':b'PRIVATE-UPLOAD'},
+                     reports={'report':'# 展会诊断\n\n<script>alert(1)</script>\n\n| 项目 | 结果 |\n|---|---|\n|模型|真实|'},
+                     stale_simulation=True)
+        exported=build_snapshot(state)
+    assert 'NEVER-EXPORT' not in exported and 'PRIVATE-UPLOAD' not in exported
+    assert '<h1>展会诊断</h1>' in exported and '<td>真实</td>' in exported
+    assert '<script>alert(1)</script>' not in exported
+    assert '配置已变化' in exported and '尚未生成' in exported
+    assert 'Plotly.newPlot' in exported and '<script src=' not in exported
+    assert 'BMA集成' in exported and posts['xgb']['metrics']
+    assert all(row['模型'] in exported for row in posts['xgb']['metrics'])
+    assert all(name in exported for name in simulation['parameters'])

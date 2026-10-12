@@ -9,6 +9,7 @@ from dash import ALL, Input, Output, State, ctx, html, no_update
 from . import tasks
 from .configuration import ALGORITHMS, CONFIG_IDS, parse_config
 from .layouts import MODULES
+from .snapshot import build_snapshot
 from .presentation import charts_for, filtered_figure, render
 
 ACTIONS=['confirm','simulate','bma','xgb','pre-report','stage-report','report','test-llm']
@@ -21,6 +22,39 @@ def file_list(state):
 
 
 def register(app):
+    @app.callback(Output('reset-token','data'),Input('reset-session','n_clicks'),prevent_initial_call=True)
+    def reset_session(_):
+        tasks.reset()
+        return uuid4().hex
+
+    app.clientside_callback("""
+        function(token) {
+            if (!token) return window.dash_clientside.no_update;
+            Object.keys(sessionStorage).forEach(function(key) {
+                if (key.startsWith('_dash_persistence.') || key === 'had-confirmed' || key === 'had-confirmed-timestamp')
+                    sessionStorage.removeItem(key);
+            });
+            window.location.replace('/workspace?module=data');
+            return token;
+        }
+    """,Output('reset-complete','data'),Input('reset-token','data'),prevent_initial_call=True)
+
+    @app.callback(Output('upstream-field','style'),Input('routing','value'))
+    def upstream_mapping(routing):
+        return {} if 'on' in routing else {'display':'none'}
+
+    @app.callback(Output('download-results','data'),Output('snapshot-message','children'),
+                  Input('save-results','n_clicks'),prevent_initial_call=True)
+    def save_results(_):
+        with tasks.lock:
+            state=tasks.current()
+            if state['busy'] or not (state['prepared'] or state['basin']):
+                return no_update,'请先完成数据分析，再保存运行结果。'
+            snapshot=deepcopy({key:state[key] for key in (
+                'prepared','simulation','posts','reports','basin','confirmed_config',
+                'stale_data','stale_simulation','space_error')})
+        return {'content':build_snapshot(snapshot),'filename':'HydroTune-results.html','type':'text/html'},'已保存完整展示页面，可离线打开。'
+
     @app.callback(Output('landing','style'),Output('workspace','style'),Output('module-tabs','value'),Output('url','search'),
                   Input('url','pathname'),Input('url','search'),Input('module-tabs','value'))
     def navigate(path,search,tab):
@@ -130,7 +164,7 @@ def register(app):
 
     @app.callback(Output('job-status','children'),Output('job-progress','value'),Output('top-status','children'),
                   Output('llm-status','children'),Output('job-progress','style'),Output('session-note','children'),Output('had-confirmed','data'),
-                  Output('report-download','disabled'),Output('corrected-download','disabled'),
+                  Output('report-download','disabled'),Output('corrected-download','disabled'),Output('save-results','disabled'),
                   *[Output(action,'disabled') for action in ACTIONS],Input('poll','n_intervals'),State('had-confirmed','data'))
     def poll(_,had_confirmed):
         state=tasks.current()
@@ -140,7 +174,7 @@ def register(app):
                     {} if state['busy'] or value is not None else {'display':'none'},
                     '服务端会话已失效（可能因服务重启或长时间未使用），请重新选择并确认数据。' if had_confirmed and state['confirmed_config'] is None else '',
                     bool(had_confirmed or state['confirmed_config'] is not None),
-                    not bool(state['reports'].get('report')),not bool(state['posts'].get('xgb',{}).get('corrected_flow'))]+[state['busy'] for action in ACTIONS]
+                    not bool(state['reports'].get('report')),not bool(state['posts'].get('xgb',{}).get('corrected_flow')),state['busy'] or not bool(state['prepared'] or state['basin'])]+[state['busy'] for action in ACTIONS]
 
     @app.callback(Output('file-list','children'),Output('file-list-key','data'),Input('poll','n_intervals'),State('file-list-key','data'))
     def pending_files(_,previous):
@@ -164,15 +198,15 @@ def register(app):
 
     @app.callback(Output('module-view','children'),Output('render-key','data'),Output('report-copy','content'),
                   Input('poll','n_intervals'),Input('module-tabs','value'),Input('chart-choice','value'),Input('series-choice','value'),
-                  Input('phase-choice','value'),Input('date-range','start_date'),Input('date-range','end_date'),Input('metric-choice','value'),State('render-key','data'))
-    def show(_,module,choice,series,phase,start,end,metric,last_key):
+                  Input('phase-choice','value'),Input('metric-choice','value'),State('render-key','data'))
+    def show(_,module,choice,series,phase,metric,last_key):
         state=tasks.current()
         with tasks.lock:
-            key=[state['revision'],module,choice,series,phase,start,end,metric]
+            key=[state['revision'],module,choice,series,phase,metric]
             if key==last_key:
                 return no_update,no_update,no_update
             snapshot=deepcopy(state)
-        return render(snapshot,module,choice,series,phase,start,end,metric),key,snapshot['reports'].get('report','')
+        return render(snapshot,module,choice,series,phase,metric),key,snapshot['reports'].get('report','')
 
     @app.callback(Output('module-tabs','value',allow_duplicate=True),Input('confirm','n_clicks'),prevent_initial_call=True)
     def after_confirm(_):
@@ -196,12 +230,12 @@ def register(app):
 
     @app.callback(Output('download-chart','data'),Output('export-message','children'),Input('chart-download','n_clicks'),
                   State('module-tabs','value'),State('chart-choice','value'),State('series-choice','value'),State('phase-choice','value'),
-                  State('date-range','start_date'),State('date-range','end_date'),State('chart-format','value'),State('metric-choice','value'),prevent_initial_call=True)
-    def chart_download(_,module,choice,series,phase,start,end,format_,metric):
-        figure=filtered_figure(tasks.current(),module,choice,series,phase,start,end,metric)
+                  State('chart-format','value'),State('metric-choice','value'),prevent_initial_call=True)
+    def chart_download(_,module,choice,series,phase,format_,metric):
+        figure=filtered_figure(tasks.current(),module,choice,series,phase,metric)
         if figure is None:
             return no_update,'请先生成并选择一张过程图。'
-        name='HydroTune-'+module+'-'+re.sub(r'[^\w.-]','_',choice or 'chart')+'-'+(start or 'all')+'.'+format_
+        name='HydroTune-'+module+'-'+re.sub(r'[^\w.-]','_',choice or 'chart')+'.'+format_
         if format_=='html':
             return {'content':figure.to_html(include_plotlyjs=True),'filename':name,'type':'text/html'},'交互图表已导出。'
         try:

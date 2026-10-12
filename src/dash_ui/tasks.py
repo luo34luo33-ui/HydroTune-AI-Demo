@@ -41,6 +41,14 @@ def current():
         return state
 
 
+def reset():
+    """Detach the old session, including any job still finishing in the worker."""
+    with lock:
+        sessions.pop(session.get('hydrotune'), None)
+        session['hydrotune'] = uuid4().hex
+        return current()
+
+
 def configure(state, config):
     with lock:
         previous = state['config']

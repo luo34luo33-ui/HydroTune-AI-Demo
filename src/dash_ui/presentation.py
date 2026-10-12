@@ -1,6 +1,5 @@
 """Render server-side scientific results with a consistent Plotly theme."""
 from copy import deepcopy
-from numbers import Number
 from dash import dcc, html
 import pandas as pd
 import plotly.graph_objects as go
@@ -60,7 +59,7 @@ def performance_figure(state, series, phase, metric):
     return figure
 
 
-def filtered_figure(state, module, choice, series, phase, start, end, metric='NSE'):
+def filtered_figure(state, module, choice, series, phase, metric='NSE'):
     if module=='post' and choice=='模型性能比较' and state['simulation']:
         return performance_figure(state,series,phase,metric)
     charts = charts_for(state,module)
@@ -74,18 +73,6 @@ def filtered_figure(state, module, choice, series, phase, start, end, metric='NS
     fig = go.Figure(deepcopy(chart['figure']))
     if series:
         fig.data = [trace for trace in fig.data if trace.name in series]
-    if start or end:
-        for trace in fig.data:
-            if len(trace.x) and isinstance(trace.x[0], Number):
-                continue
-            dates = pd.to_datetime(trace.x,errors='coerce')
-            # Range filtering is only meaningful when the file has valid timestamps.
-            if len(dates) and not dates.isna().any():
-                keep = (dates >= pd.Timestamp(start)) if start else pd.Series(True,index=range(len(dates))).to_numpy()
-                if end:
-                    keep &= dates < pd.Timestamp(end)+pd.Timedelta(days=1)
-                trace.x = list(dates[keep])
-                trace.y = list(pd.Series(trace.y).to_numpy()[keep])
     fig.update_layout(uirevision=choice, paper_bgcolor='white',plot_bgcolor='white',
                       font={'family':'Arial, Microsoft YaHei','color':'#172B4D'},
                       legend={'orientation':'h','y':-.25,'x':0,'font':{'size':10},'entrywidth':.33,'entrywidthmode':'fraction'},
@@ -104,7 +91,7 @@ def basin_card(state):
     return empty('流域概况',state['space_error'] or '尚未确认流域空间数据。可上传 SHP ZIP，DEM 为可选项。')
 
 
-def render(state,module,choice,series,phase,start,end,metric):
+def render(state,module,choice,series,phase,metric):
     prepared,simulation = state['prepared'],state['simulation']
     if prepared is None:
         if module == 'data' and (state['basin'] or state['space_error']):
@@ -152,10 +139,10 @@ def render(state,module,choice,series,phase,start,end,metric):
             rows=[r for r in rows if r['模型'] in series]
         totals=summary(rows)
         chart=[] if choice=='模型性能比较' else [dcc.Graph(figure=performance_figure(state,series,phase,metric),config={'responsive':True,'displaylogo':False})]
-        content.append(card('模型性能比较',html.P('指标按完整场次计算；时间筛选仅作用于过程图。',className='hint'),table(totals),*chart))
+        content.append(card('模型性能比较',html.P('指标按完整场次计算。',className='hint'),table(totals),*chart))
     else:
         return notices+[card('综合智能分析报告',markdown(state['reports'].get('report')))]
-    figure=filtered_figure(state,module,choice,series,phase,start,end,metric)
+    figure=filtered_figure(state,module,choice,series,phase,metric)
     if figure is not None:
         content.insert(1,card('模型性能比较' if choice=='模型性能比较' else '水文过程',dcc.Graph(id='selected-chart',figure=figure,config={'responsive':True,'displaylogo':False})))
     elif module!='report':

@@ -63,8 +63,9 @@ def sidebar():
             field('预热期 · 小时', number('warmup_hours',0,0,720)),
             field('参数来源', dropdown('parameter_mode',[{'label':'自动率定','value':'calibrate'},{'label':'导入参数','value':'import'}],'calibrate')),
             group('数据列映射', [field(label, dcc.Input(id='col-'+key,value=key,debounce=True,persistence=True,persistence_type='session')) for key,label in
-                               [('date','时间列'),('precip','降水列 · mm/步'),('evap','蒸发列 · mm/步'),('flow','流量列 · m³/s'),('upstream','上游出库流量列 · m³/s')]]),
+                               [('date','时间列'),('precip','降水列 · mm/步'),('evap','蒸发列 · mm/步'),('flow','流量列 · m³/s')]]),
             group('上游出库汇流', [check('routing','启用上游汇流'),check('routing_fixed','固定马斯京根参数'),
+                                  html.Div(field('上游出库流量列 · m³/s',dcc.Input(id='col-upstream',value='upstream',debounce=True,persistence=True,persistence_type='session')),id='upstream-field',style={'display':'none'}),
                                   field('k · 计算时间步',number('routing-k',2.5,.5,10,.1)),field('x · 坦化系数',number('routing-x',.25,0,.5,.01))]),
         ], True),
         group('上传与确认', [
@@ -89,6 +90,10 @@ def sidebar():
             ('xgb_depth','树深度',10,3,15,1),('xgb_rate','学习率',.05,.01,.5,.01),
             ('xgb_estimators','树数量',300,50,500,50),('xgb_seed','随机种子',2025,1,9999,1),
             ('xgb_quantile','残差中心分位',.9,.8,.98,.02),('xgb_ratio','最大校正比例',.45,.1,1,.05)]]+[check('xgb_clip','限制预测误差范围',True)]),
+        group('测试与展示', [html.Button('保存运行结果（HTML）',id='save-results',className='secondary',disabled=True),
+                             html.Button('一键重置',id='reset-session',className='secondary reset-button'),
+                             html.P('重置将清空本会话文件、结果、密钥及配置，恢复默认设置。',className='hint'),
+                             html.Div(id='snapshot-message',role='status',className='hint')],True),
         html.Div(id='config-note',className='hint',role='status'),
     ],className='sidebar',id='sidebar')
 
@@ -99,6 +104,7 @@ def layout():
         dcc.Location(id='url',refresh=False),dcc.Interval(id='poll',interval=1000),
         dcc.Store(id='render-key'),dcc.Store(id='file-list-key'),dcc.Store(id='had-confirmed',storage_type='session'),
         dcc.Download(id='download-report'),dcc.Download(id='download-chart'),dcc.Download(id='download-corrected'),
+        dcc.Download(id='download-results'),dcc.Store(id='reset-token'),dcc.Store(id='reset-complete'),
         html.Header([dcc.Link([html.Strong('HydroTune'),html.Span('：大语言模型智能体水文平台')],href='/',className='brand'),
                      html.Div(TAGLINE,className='tagline'),
                      html.Div([dcc.Link('进入工作台 →',href='/workspace?module=data',className='workbench-link'),dcc.Link('返回首页',href='/',className='home-link'),html.Span(id='top-status',className='status-chip')],className='header-right')],className='topbar'),
@@ -134,10 +140,9 @@ def layout():
                     field('显示序列',dcc.Dropdown(id='series-choice',multi=True,placeholder='全部序列')),
                     field('阶段',dropdown('phase-choice',[{'label':'全部','value':'all'},{'label':'率定','value':'率定'},{'label':'验证','value':'验证'}],'all')),
                     field('评价指标',dropdown('metric-choice',['NSE','KGE','RMSE','MAE','PBIAS'],'NSE')),
-                    field('时间范围',dcc.DatePickerRange(id='date-range',display_format='YYYY-MM-DD',clearable=True)),
                     field('格式',dropdown('chart-format',['html','png','svg'],'html')),
-                    html.Button('下载当前图表',id='chart-download',className='secondary'),html.Div(id='export-message',role='status')
-                ],className='filter-grid')],id='chart-tools',className='card chart-tools'),
+                    html.Div([html.Span('操作'),html.Button('下载当前图表',id='chart-download',className='secondary')],className='field chart-export-action'),html.Div(id='export-message',role='status')
+                ],className='filter-grid')],id='chart-tools',className='card chart-tools',open=True),
                 dcc.Loading(html.Div(id='module-view'),type='circle',delay_show=250),
                 html.Footer('HydroTune · 真实数据 · 可追溯计算 · 智能分析',className='workspace-footer'),
             ],className='workspace-main')
