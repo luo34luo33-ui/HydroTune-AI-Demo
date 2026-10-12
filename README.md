@@ -236,20 +236,27 @@ ModelRegistry.register(MyModel())
 
 ### 部署步骤
 
-1. **Fork 本仓库** 到你的 GitHub 账号
-2. **初始化子模块**：在部署前需要正确初始化子模块
-   ```bash
-   git submodule update --init --recursive
-   ```
-3. **在 Streamlit Cloud 部署**：
-   - 连接你的 GitHub 仓库
-   - 在 Advanced settings 中勾选 **"Include submodules"** 选项
-   - 部署主文件：`app.py`
+1. 将代码及 `requirements.txt` 推送到 GitHub，确认云端选中的分支包含最新修复。
+2. 在 Streamlit Community Cloud 中连接仓库，入口设置为 `app.py`（英文版为 `app_EN.py`）。
+3. 在 Advanced settings 的 Secrets 中配置 AI 服务密钥；不要将本地 `.env` 上传到仓库。
+4. 等待依赖重建完成，检查首页及一次多场次分析的结果展示。
+
+模型核心位于 `src/hydro/`，无需初始化 Git 子模块，也不依赖 `tests/` 目录。
+
+### 图表内存控制
+
+- 多场次结果每张图最多显示 4 场，所有场次仍参与指标汇总。
+- PNG 总像素不超过 400 万，显示与下载复用同一份图片，取消自动生成 450 DPI 巨图。
+- 图形编码后立即关闭；下载不会触发整页重新运行。
+- 中英文入口要求 Streamlit 1.54 或更高版本，已使用 `width` 替代弃用参数。
+
+本地回归检查：`python -m unittest test_cloud_plotting -v`。
 
 ### 常见问题
 
-**Q: 新安江模型加载失败？**
-A: 确保在 Streamlit Cloud 部署时勾选了 "Include submodules" 选项。
+**Q: 服务启动后出现 healthz connection reset？**
+A: 这表示内部健康检查连接被重置，需结合前后日志检查进程重启或资源超限。
+旧版多场次巨图可能产生很高的内存峰值；先确认云端正在运行包含本节图表修复的版本。
 
 **Q: 中文字体显示为方块？**
 A: 系统会自动检测可用的中文字体。Streamlit Cloud 环境中可能需要配置自定义字体。

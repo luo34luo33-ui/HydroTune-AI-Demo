@@ -3,6 +3,7 @@ HydroTune-AI 流域水文模型智能率定系统
 Streamlit 主入口
 """
 import streamlit as st
+from src.app.plotting import PLOT_DPI, EVENTS_PER_FIGURE, create_event_figure, render_figure
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -84,8 +85,6 @@ if 'current_page' not in st.session_state:
 # ============================================================
 # 绘图与报告公共常量 / 工具函数
 # ============================================================
-PLOT_DPI = 220
-EXPORT_DPI = 450
 
 
 def render_copyable_report(report_text: str, key: str, height: int = 420):
@@ -188,7 +187,7 @@ def show_models_page():
     </div>
     "    """, unsafe_allow_html=True)
     
-    if st.button("← 返回主页", key="models_back_1", use_container_width=True):
+    if st.button("← 返回主页", key="models_back_1", width="stretch"):
         st.session_state.current_page = 'main'
         st.rerun()
     
@@ -267,7 +266,7 @@ def show_models_page():
     """, unsafe_allow_html=True)
     
     st.divider()
-    if st.button("← 返回主页", key="models_back_2", use_container_width=True):
+    if st.button("← 返回主页", key="models_back_2", width="stretch"):
         st.session_state.current_page = 'main'
         st.rerun()
 
@@ -360,9 +359,9 @@ with st.sidebar:
     
     st.divider()
     st.markdown("### 📂 导航")
-    if st.button("🏠 主页", use_container_width=True):
+    if st.button("🏠 主页", width="stretch"):
         st.session_state.current_page = 'main'
-    if st.button("📚 水文模型介绍", use_container_width=True):
+    if st.button("📚 水文模型介绍", width="stretch"):
         st.session_state.current_page = 'models'
     
     st.divider()
@@ -909,7 +908,7 @@ elif not uploaded_files:
     
     col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1])
     with col_btn2:
-        if st.button("📚 水文模型介绍", type="secondary", use_container_width=True):
+        if st.button("📚 水文模型介绍", type="secondary", width="stretch"):
             st.session_state.current_page = 'models'
             st.rerun()
     
@@ -1309,7 +1308,7 @@ if uploaded_files and len(uploaded_files) > 0:
                         '代表分': f"{code.representative_score:.1f}"
                     })
                 if codes_data:
-                    st.dataframe(pd.DataFrame(codes_data), use_container_width=True, hide_index=True)
+                    st.dataframe(pd.DataFrame(codes_data), width="stretch", hide_index=True)
         
         st.divider()
         with st.expander("🤖 LLM智能分析报告", expanded=True):
@@ -1914,18 +1913,13 @@ if uploaded_files and len(uploaded_files) > 0:
             }
             
             n_files = len(file_dfs)
-            n_cols = min(2, n_files)
-            n_rows = (n_files + n_cols - 1) // n_cols
-            
-            fig, axes = plt.subplots(n_rows, n_cols, figsize=(18, 5.8 * n_rows), dpi=PLOT_DPI)
-            if n_files == 1:
-                axes = [axes]
-            else:
-                axes = axes.flatten() if n_rows > 1 else axes
-            
             for idx, (file_name, raw_df) in enumerate(file_dfs):
-                ax = axes[idx]
-                
+                panel_index = idx % EVENTS_PER_FIGURE
+                if panel_index == 0:
+                    batch_size = min(EVENTS_PER_FIGURE, n_files - idx)
+                    fig, axes = create_event_figure(batch_size)
+                ax = axes[panel_index]
+
                 first_model = list(file_simulation_results.keys())[0] if file_simulation_results else None
                 if first_model and file_name in file_simulation_results.get(first_model, {}):
                     precip_arr = file_simulation_results[first_model][file_name].get('precip', np.zeros(len(raw_df)))
@@ -2074,27 +2068,15 @@ if uploaded_files and len(uploaded_files) > 0:
                 ax.set_xlabel(xlabel_text, fontsize=12)
                 ax.set_ylabel(r"流量 ($m^3/s$)", fontsize=12)
             
-            for idx in range(n_files, len(axes)):
-                axes[idx].axis('off')
-            
-            plt.tight_layout()
-            st.pyplot(fig)
-            
-            # 保存图像按钮
-            col1, col2 = st.columns([1, 5])
-            with col1:
-                import io
-                buf = io.BytesIO()
-                fig.savefig(buf, format='png', dpi=EXPORT_DPI, bbox_inches='tight')
-                buf.seek(0)
-                st.download_button(
-                    "💾 下载图像",
-                    data=buf,
-                    file_name="flow_comparison_all.png",
-                    mime="image/png",
-                    key="download_all_plots_btn"
-                )
-            
+                if panel_index + 1 == batch_size:
+                    fig.tight_layout()
+                    batch_number = idx // EVENTS_PER_FIGURE + 1
+                    render_figure(
+                        fig, label="💾 下载图像",
+                        file_name=f"flow_comparison_batch_{batch_number}.png",
+                        key=f"download_plots_batch_{batch_number}",
+                    )
+
             # 汇总指标表
             if summary_data:
                 st.divider()
@@ -2108,13 +2090,13 @@ if uploaded_files and len(uploaded_files) > 0:
                 if calib_data:
                     st.subheader("📊 率定场次指标汇总")
                     calib_df = pd.DataFrame(calib_data)
-                    st.dataframe(calib_df, use_container_width=True, hide_index=True)
+                    st.dataframe(calib_df, width="stretch", hide_index=True)
                 
                 # 创建验证场次汇总表
                 if valid_data:
                     st.subheader("📊 验证场次指标汇总")
                     valid_df = pd.DataFrame(valid_data)
-                    st.dataframe(valid_df, use_container_width=True, hide_index=True)
+                    st.dataframe(valid_df, width="stretch", hide_index=True)
                 
                 if calib_data and valid_data:
                     st.divider()
@@ -2186,7 +2168,7 @@ if uploaded_files and len(uploaded_files) > 0:
                     with st.expander(f"📊 {model_name}"):
                         st.markdown(f"**率定NSE**: {calib_result['nse']:.4f}")
                         param_df = generate_param_table(model_name, calib_result['params'])
-                        st.dataframe(param_df, use_container_width=True, hide_index=True)
+                        st.dataframe(param_df, width="stretch", hide_index=True)
             
             # 多文件模式AI报告
             st.divider()
@@ -2481,7 +2463,7 @@ if uploaded_files and len(uploaded_files) > 0:
             ax.set_ylabel(r"流量 ($m^3/s$)", fontsize=12)
             
             plt.tight_layout()
-            st.pyplot(fig)
+            render_figure(fig)
             
             # 标记识别的洪水场次
             if preanalysis_result and hasattr(preanalysis_result, 'selected_events') and preanalysis_result.selected_events:
@@ -2578,30 +2560,19 @@ if uploaded_files and len(uploaded_files) > 0:
             ax.set_ylabel(r"流量 ($m^3/s$)", fontsize=12)
             
             plt.tight_layout()
-            st.pyplot(fig)
-        
-            # 保存图像按钮
-            col1, col2 = st.columns([1, 5])
-            with col1:
-                import io
-                buf = io.BytesIO()
-                fig.savefig(buf, format='png', dpi=EXPORT_DPI, bbox_inches='tight')
-                buf.seek(0)
-                st.download_button(
-                    "💾 下载图像",
-                    data=buf,
-                    file_name="flow_comparison_single.png",
-                    mime="image/png",
-                    key="download_single_plot_btn"
-                )
-            
+            render_figure(
+                fig, label="💾 下载图像",
+                file_name="flow_comparison_single.png",
+                key="download_single_plot_btn",
+            )
+
             # 汇总指标表
             if summary_data:
                 st.divider()
                 st.subheader("📋 率定指标汇总")
                 
                 summary_df = pd.DataFrame(summary_data)
-                st.dataframe(summary_df, use_container_width=True, hide_index=True)
+                st.dataframe(summary_df, width="stretch", hide_index=True)
                 
                 # 统一参数表格
                 st.divider()
@@ -2611,7 +2582,7 @@ if uploaded_files and len(uploaded_files) > 0:
                     with st.expander(f"📊 {model_name}"):
                         st.markdown(f"**率定NSE**: {calib_result['nse']:.4f}")
                         param_df = generate_param_table(model_name, calib_result['params'])
-                        st.dataframe(param_df, use_container_width=True, hide_index=True)
+                        st.dataframe(param_df, width="stretch", hide_index=True)
             
             # XGBoost误差校正
             st.divider()
@@ -2658,7 +2629,7 @@ if uploaded_files and len(uploaded_files) > 0:
                         ax_ec.set_title(f"{best_name} + XGB误差校正 流量过程对比", fontsize=14)
                         ax_ec.legend(fontsize=10, loc='upper right')
                         ax_ec.grid(True, alpha=0.3)
-                        st.pyplot(fig_ec)
+                        render_figure(fig_ec)
                         
                         corrected_df = pd.DataFrame({
                             '时间步': x,
