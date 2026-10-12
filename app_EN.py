@@ -754,7 +754,6 @@ with st.sidebar:
     for model_name in RECOMMENDED_MODELS:
         st.write(f"✅ {model_name}")
     
-    st.caption("Note: Full version models currently not supported; using simplified versions")
 
 
 # ============================================================

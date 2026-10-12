@@ -733,7 +733,6 @@ with st.sidebar:
     for model_name in RECOMMENDED_MODELS:
         st.write(f"✅ {model_name}")
     
-    st.caption("注：完整版模型暂不支持，使用简化版")
 
 
 # ============================================================
