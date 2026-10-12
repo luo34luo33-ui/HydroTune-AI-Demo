@@ -252,6 +252,36 @@ def test_dash_routes_and_callback_navigation_do_not_start_jobs(module):
     assert response.json['response']['module-tabs']['value']==module
 
 
+def test_result_polling_only_publishes_changed_results(files,config):
+    from dash import no_update
+    app=create_app()
+    config['mode']=analysis.UPLOAD_MODES[2]
+    prepared=analysis.preprocess([(f'event{i}.csv',files[0][1]) for i in range(48)],config)
+    with app.server.test_request_context('/'):
+        state=tasks.current()
+        publish=app.callback_map['result-revision.data']['callback'].__wrapped__
+        show=next(v['callback'].__wrapped__ for k,v in app.callback_map.items() if 'module-view.children' in k)
+        choose=next(v['callback'].__wrapped__ for k,v in app.callback_map.items() if 'chart-choice.options' in k)
+        assert publish(0,None)==0
+        assert publish(1,0) is no_update
+        state.update(prepared=prepared,confirmed_config=config,revision=1)
+        assert publish(2,0)==1
+        output,key,_=show(1,'data','event0.csv',None,'all','NSE',None)
+        from plotly.io.json import to_json_plotly
+        serialized=to_json_plotly(output)
+        assert 'event47.csv' in serialized and '洪水语义画像' in serialized
+        assert choose(1,'data','event0.csv')[1] is no_update
+        # Status polling during/after slow result delivery never republishes it.
+        state.update(busy=True,phase='运行中',progress=.5)
+        assert publish(3,1) is no_update
+        state.update(busy=False,phase='完成',progress=1)
+        assert publish(4,1) is no_update
+        assert show(1,'data','event0.csv',None,'all','NSE',key)==(no_update,no_update,no_update)
+    for entry in app.callback_map.values():
+        if any(out.component_id in ('module-view','chart-choice') for out in (entry['output'] if isinstance(entry['output'],list) else [entry['output']])):
+            assert {'id':'poll','property':'n_intervals'} not in entry['inputs']
+
+
 def test_form_selects_active_algorithm_and_rejects_bad_numbers():
     values={}
     def visit(component):

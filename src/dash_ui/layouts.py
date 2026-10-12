@@ -107,7 +107,7 @@ def layout():
     descriptions = ['洪水统计、智能预分析、流域概况。','模型率定、模拟评价、多模型比较。','BMA 融合、XGB 误差校正、多模型对比。','模型性能分析、LLM 智能诊断及优化建议。']
     return html.Div([
         dcc.Location(id='url',refresh=False),dcc.Interval(id='poll',interval=1000),
-        dcc.Store(id='render-key'),dcc.Store(id='file-list-key'),dcc.Store(id='had-confirmed',storage_type='session'),
+        dcc.Store(id='render-key'),dcc.Store(id='result-revision'),dcc.Store(id='file-list-key'),dcc.Store(id='had-confirmed',storage_type='session'),
         dcc.Download(id='download-report'),dcc.Download(id='download-chart'),dcc.Download(id='download-corrected'),
         dcc.Download(id='download-results'),dcc.Store(id='reset-token'),dcc.Store(id='reset-complete'),
         html.Header([dcc.Link([html.Strong('HydroTune'),html.Span('：大语言模型智能体水文平台')],href='/',className='brand'),

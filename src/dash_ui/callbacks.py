@@ -192,22 +192,29 @@ def register(app):
         key=[list(state['pending']),state['confirmed_files']]
         return (file_list(state),key) if key!=previous else (no_update,no_update)
 
+    @app.callback(Output('result-revision','data'),Input('poll','n_intervals'),State('result-revision','data'))
+    def result_revision(_,previous):
+        with tasks.lock:
+            revision=tasks.current()['revision']
+        # Polling must not supersede a large result response still in transit.
+        return revision if revision!=previous else no_update
+
     @app.callback(*[Output('actions-'+module,'style') for module in MODULES],Output('chart-tools','style'),Input('module-tabs','value'))
     def actions(module):
         return [{} if key==module else {'display':'none'} for key in MODULES]+[{'display':'none'} if module=='report' else {}]
 
     @app.callback(Output('chart-choice','options'),Output('chart-choice','value'),Output('series-choice','options'),
-                  Input('poll','n_intervals'),Input('module-tabs','value'),State('chart-choice','value'))
+                  Input('result-revision','data'),Input('module-tabs','value'),State('chart-choice','value'))
     def choices(_,module,choice):
         state=tasks.current()
         with tasks.lock:
             charts=charts_for(state,module)
             options=[c['title'] for c in charts]
             names=list(dict.fromkeys(trace['name'] for c in charts if c['title']!='模型性能比较' for trace in c['figure']['data']))
-        return options,choice if choice in options else (options[0] if options else None),names
+        return options,no_update if choice in options else (options[0] if options else None),names
 
     @app.callback(Output('module-view','children'),Output('render-key','data'),Output('report-copy','content'),
-                  Input('poll','n_intervals'),Input('module-tabs','value'),Input('chart-choice','value'),Input('series-choice','value'),
+                  Input('result-revision','data'),Input('module-tabs','value'),Input('chart-choice','value'),Input('series-choice','value'),
                   Input('phase-choice','value'),Input('metric-choice','value'),State('render-key','data'))
     def show(_,module,choice,series,phase,metric,last_key):
         state=tasks.current()
