@@ -14,6 +14,7 @@ from typing import List, Dict, Tuple
 from io import StringIO
 
 from src.llm_api import call_minimax, set_language
+from src.app.llm_settings import render_llm_settings
 # Set English language for reports, plots, and LLM prompts
 set_language('en')
 from src.data_agent import (
@@ -333,6 +334,7 @@ with st.sidebar:
     st.markdown("### 🤖 AI Agent Status")
     agent_status = st.empty()
     agent_status.success("🟢 AI Agent Ready")
+    render_llm_settings(language="en")
     
     # Model loading status check
     st.markdown("### 📊 Model Status")

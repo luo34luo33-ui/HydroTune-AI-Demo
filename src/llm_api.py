@@ -1,218 +1,158 @@
-"""
-Minimax API 调用封装
-
-密钥读取同时支持两种来源：环境变量（本地 .env）与 Streamlit Cloud Secrets（云端部署）。
-本地开发由 .env 提供，云端由平台 Secrets 提供，共用同一套读取逻辑。
-"""
+"""LLM clients with server secrets and session-local MiniMax overrides."""
 import os
+import re
 import requests
 
 try:
     from dotenv import load_dotenv
-except ImportError:  # python-dotenv 缺失时静默降级，云端无 .env 亦可运行
+except ImportError:
     load_dotenv = None
-
 if load_dotenv is not None:
     load_dotenv()
 
 
 def _get_secret(key: str, default: str = "") -> str:
-    """读取配置项：环境变量优先，Streamlit Cloud Secrets 回退。
-
-    本地开发由 .env 经 load_dotenv() 注入环境变量；
-    云端部署由平台 Secrets 提供，需通过 st.secrets 读取。
-    非 Streamlit 进程访问 st.secrets 会抛异常，因此必须静默降级。
-    """
     value = os.getenv(key)
     if value:
-        return value
-
+        return value.strip()
     try:
         import streamlit as st
-        secrets = getattr(st, "secrets", None)
-        if secrets is not None:
-            try:
-                candidate = secrets.get(key) if hasattr(secrets, "get") else secrets[key]
-            except Exception:
-                candidate = None
-            if candidate:
-                return str(candidate)
+        value = st.secrets.get(key)
+        if value:
+            return str(value).strip()
     except Exception:
         pass
-
     return default
 
-# ============================================================
-# 全局语言配置（zh / en）
-# ============================================================
+
+def _session_state():
+    # Never store a visitor's key in process-wide environment variables.
+    from streamlit.runtime.scriptrunner import get_script_run_ctx
+    if get_script_run_ctx(suppress_warning=True) is None:
+        return None
+    import streamlit as st
+    return st.session_state
+
+
 _LANGUAGE = 'zh'
 
 
 def get_language() -> str:
-    """获取当前语言"""
     return _LANGUAGE
 
 
 def set_language(lang: str):
-    """设置语言 (zh / en)"""
     global _LANGUAGE
     _LANGUAGE = lang
 
 
 DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions"
+MINIMAX_ENDPOINTS = {
+    "cn": "https://api.minimaxi.com/v1/chat/completions",
+    "intl": "https://api.minimax.io/v1/chat/completions",
+}
+DEFAULT_MINIMAX_MODEL = "MiniMax-M2.7"
+
+
+def get_llm_config():
+    state = _session_state()
+    settings = state.get("llm_settings", {}) if state is not None else {}
+    return {
+        "provider": settings.get("provider", _get_secret("LLM_PROVIDER", "auto")).lower(),
+        "api_key": settings.get("api_key") or _get_secret("MINIMAX_API_KEY"),
+        "region": settings.get("region") or _get_secret("MINIMAX_REGION", "cn"),
+        "model": settings.get("model") or _get_secret("MINIMAX_MODEL", DEFAULT_MINIMAX_MODEL),
+    }
+
+
+def _error(provider, message):
+    """Only safe diagnostics reach reports/session state."""
+    result = f"[ERROR] {provider}: {message}"
+    state = _session_state()
+    if state is not None:
+        state["llm_last_error"] = result
+    return result
+
+
+def _request_chat(provider, url, key, payload):
+    en = get_language() == 'en'
+    try:
+        response = requests.post(url, json=payload, headers={
+            "Authorization": f"Bearer {key}", "Content-Type": "application/json",
+        }, timeout=(10, 120))
+        # Never echo response bodies/exceptions: they can contain credentials.
+        status = response.status_code
+        if status >= 400:
+            hints = {
+                401: ("Invalid key or platform mismatch", "密钥无效或与所选平台不匹配"),
+                403: ("Access denied; check model permissions", "访问被拒绝，请检查模型权限"),
+                402: ("Check account balance", "请检查账户余额"),
+                429: ("Rate/quota limit; check balance and retry later", "请求限流或配额不足，请检查余额并稍后重试"),
+                400: ("Check model name and request settings", "请检查模型名称和请求配置"),
+            }
+            hint = hints.get(status, ("Service request failed", "服务请求失败"))[0 if en else 1]
+            return _error(provider, f"HTTP {status} — {hint}")
+        data = response.json()
+        base = data.get("base_resp") or {}
+        code = base.get("status_code", 0)
+        if code:
+            safe_code = str(code) if str(code).isdigit() else "unknown"
+            return _error(provider, f"API code {safe_code}; " + (
+                "check key, platform, balance and model permissions" if en else
+                "请检查密钥、平台、余额和模型权限"))
+        if data.get("error"):
+            return _error(provider, "API rejected the request" if en else "API 拒绝了请求，请检查密钥、余额和模型权限")
+        choices = data.get("choices") or []
+        content = choices[0].get("message", {}).get("content") if choices else None
+        if isinstance(content, str):
+            content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+        if not content or not isinstance(content, str) or content.startswith("<think>"):
+            length = bool(choices and choices[0].get("finish_reason") == "length")
+            return _error(provider, (
+                "Token limit reached before answer" if en else "生成达到长度上限，尚未输出答案"
+            ) if length else ("Empty response" if en else "服务返回空内容"))
+        content = content.replace(key, "[REDACTED]") if key else content
+        state = _session_state()
+        if state is not None:
+            state.pop("llm_last_error", None)
+        return content
+    except requests.exceptions.Timeout:
+        return _error(provider, "Connection/read timeout; retry later" if en else "连接或响应超时，请稍后重试")
+    except requests.exceptions.RequestException:
+        return _error(provider, "Network connection failed" if en else "网络连接失败，请检查平台选择与网络")
+    except (ValueError, TypeError, AttributeError, IndexError, KeyError):
+        return _error(provider, "Invalid API response" if en else "API 返回格式异常")
 
 
 def _call_deepseek(prompt: str, system_prompt: str, api_key: str) -> str:
-    """调用 DeepSeek（OpenAI 兼容接口）"""
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-    messages = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
+    messages = ([{"role": "system", "content": system_prompt}] if system_prompt else [])
     messages.append({"role": "user", "content": prompt})
-
-    payload = {
-        "model": "deepseek-chat",
-        "messages": messages,
-        "temperature": 0.7,
-        "max_tokens": 2048,
-        "stream": False,
-    }
-
-    resp = requests.post(DEEPSEEK_API_URL, json=payload, headers=headers, timeout=60)
-    resp.raise_for_status()
-    data = resp.json()
-    choices = data.get("choices") or []
-    if choices:
-        return choices[0].get("message", {}).get("content", "") or ""
-    if get_language() == 'en':
-        return "[ERROR] DeepSeek returned empty content"
-    return "[ERROR] DeepSeek返回空内容"
+    return _request_chat("DeepSeek", DEEPSEEK_API_URL, api_key, {
+        "model": "deepseek-chat", "messages": messages,
+        "temperature": 0.7, "max_tokens": 2048, "stream": False,
+    })
 
 
 def call_minimax(prompt: str, system_prompt: str = "") -> str:
-    """
-    调用大模型 API，返回生成的文本
-
-    配置了 DEEPSEEK_API_KEY 时优先使用 DeepSeek，否则回退 Minimax。
-
-    Args:
-        prompt: 用户输入
-        system_prompt: 系统提示词
-
-    Returns:
-        LLM 生成的响应文本
-    """
-    # 优先：DeepSeek（境外云端可达性更好）
+    """Shared dispatcher; explicit MiniMax selection overrides automatic DeepSeek."""
+    config = get_llm_config()
+    if config["provider"] not in ("auto", "minimax", "deepseek"):
+        return _error("LLM", "LLM_PROVIDER 必须是 auto、minimax 或 deepseek / invalid provider")
     ds_key = _get_secret("DEEPSEEK_API_KEY")
-    if ds_key:
-        try:
-            return _call_deepseek(prompt, system_prompt, ds_key)
-        except requests.exceptions.Timeout:
-            if get_language() == 'en':
-                return "[ERROR] DeepSeek API call timed out"
-            return "[ERROR] DeepSeek API 调用超时"
-        except requests.exceptions.RequestException as e:
-            if get_language() == 'en':
-                return f"[ERROR] DeepSeek API call failed: {e}"
-            return f"[ERROR] DeepSeek API 调用失败: {e}"
-        except Exception as e:
-            if get_language() == 'en':
-                return f"[ERROR] Error processing DeepSeek response: {e}"
-            return f"[ERROR] 处理DeepSeek响应时出错: {e}"
-
-    # 回退：Minimax
-    API_KEY = _get_secret("MINIMAX_API_KEY")
-    GROUP_ID = _get_secret("MINIMAX_GROUP_ID", "")
-
-    if not API_KEY:
-        lang = get_language()
-        if lang == 'en':
-            return "[ERROR] MINIMAX_API_KEY not found, please configure it in .env (local) or Streamlit Secrets (cloud)"
-        return "[ERROR] 未找到MINIMAX_API_KEY，请在.env文件（本地）或Streamlit Secrets（云端）中配置"
-
-    # URL支持GroupID参数
-    if GROUP_ID:
-        url = f"https://api.minimax.chat/v1/text/chatcompletion_pro?GroupId={GROUP_ID}"
-    else:
-        url = "https://api.minimax.chat/v1/text/chatcompletion_pro"
-
-    headers = {
-        "Authorization": f"Bearer {API_KEY}",
-        "Content-Type": "application/json",
-    }
-
-    # 构建消息
-    messages = []
-    if system_prompt:
-        messages.append({
-            "sender_type": "USER",
-            "sender_name": "User",
-            "text": f"系统指令：{system_prompt}"
-        })
-    messages.append({
-        "sender_type": "USER",
-        "sender_name": "User",
-        "text": prompt
+    if config["provider"] == "deepseek" or (config["provider"] == "auto" and ds_key):
+        if not ds_key:
+            return _error("DeepSeek", "DEEPSEEK_API_KEY 未配置 / not configured")
+        return _call_deepseek(prompt, system_prompt, ds_key)
+    if not config["api_key"]:
+        return _error("MiniMax", "MINIMAX_API_KEY 未配置，请展开侧栏设置 / configure in sidebar")
+    if config["region"] not in MINIMAX_ENDPOINTS:
+        return _error("MiniMax", "MINIMAX_REGION 必须是 cn 或 intl / must be cn or intl")
+    messages = [{"role": "system", "content": system_prompt or (
+        "You are HydroTune-AI, a professional hydrological analysis assistant."
+        if get_language() == 'en' else "你是 HydroTune-AI，专业的水文模型分析助手。"
+    )}, {"role": "user", "content": prompt}]
+    return _request_chat("MiniMax", MINIMAX_ENDPOINTS[config["region"]], config["api_key"], {
+        "model": config["model"], "messages": messages,
+        "max_completion_tokens": 8192, "reasoning_split": True,
+        "temperature": 0.7, "stream": False,
     })
-
-    # Minimax API 要求的完整格式
-    payload = {
-        "model": "abab6.5-chat",
-        "tokens_to_generate": 2048,
-        "temperature": 0.7,
-        "top_p": 0.9,
-        "stream": False,
-        "reply_constraints": {
-            "sender_type": "BOT",
-            "sender_name": "HydroTune-AI"
-        },
-        "sample_messages": [],
-        "plugins": [],
-        "messages": messages,
-        "bot_setting": [
-            {
-                "bot_name": "HydroTune-AI",
-                "content": "You are HydroTune-AI, a professional hydrological model intelligence assistant. You are skilled at analyzing hydrological data, explaining model parameters, and generating professional hydrological analysis reports." if get_language() == 'en' else "你是HydroTune-AI，一个专业的水文模型智能助手。你擅长分析水文数据、解释水文模型参数、生成专业的水文分析报告。"
-            }
-        ],
-    }
-
-    try:
-        resp = requests.post(url, json=payload, headers=headers, timeout=60)
-        resp.raise_for_status()
-        data = resp.json()
-
-        # 检查返回状态
-        base_resp = data.get("base_resp", {})
-        if base_resp.get("status_code", 0) != 0:
-            msg = base_resp.get('status_msg', 'unknown error')
-            if get_language() == 'en':
-                return f"[ERROR] Minimax API error: {msg}"
-            return f"[ERROR] Minimax API 错误: {msg}"
-
-        # 解析回复
-        reply = data.get("reply", "")
-        if reply:
-            return reply
-        elif "choices" in data and len(data["choices"]) > 0:
-            return data["choices"][0].get("message", {}).get("content", "")
-        else:
-            if get_language() == 'en':
-                return "[ERROR] Minimax returned empty content"
-            return "[ERROR] Minimax返回空内容"
-
-    except requests.exceptions.Timeout:
-        if get_language() == 'en':
-            return "[ERROR] Minimax API call timed out"
-        return "[ERROR] Minimax API 调用超时"
-    except requests.exceptions.RequestException as e:
-        if get_language() == 'en':
-            return f"[ERROR] Minimax API call failed: {e}"
-        return f"[ERROR] Minimax API 调用失败: {e}"
-    except Exception as e:
-        if get_language() == 'en':
-            return f"[ERROR] Error processing response: {e}"
-        return f"[ERROR] 处理响应时出错: {e}"

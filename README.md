@@ -267,6 +267,17 @@ ModelRegistry.register(MyModel())
 
 ### 常见问题
 
+**Q: 配置了 MINIMAX_API_KEY，LLM 仍不可用？**
+A: 侧栏默认折叠的“MiniMax API 设置”支持输入密钥、选择中国/国际平台、指定模型和测试连接。
+勾选“优先使用 MiniMax”可覆盖自动模式中 DeepSeek 的优先级；手动输入密钥也会切换到 MiniMax。
+留空使用服务器 Secrets。手动配置仅在当前会话生效，清除配置后恢复服务器设置。
+已更新为 Chat Completions 接口，默认模型为 `MiniMax-M2.7`，不再使用旧的 `abab6.5-chat`。
+中国/国际平台必须与密钥来源一致；连接测试会提示鉴权、配额、网络或模型配置问题。
+服务器也可配置 `LLM_PROVIDER = "minimax"`、`MINIMAX_REGION = "cn"`（或 `"intl"`）和 `MINIMAX_MODEL`。
+新接口无需 `MINIMAX_GROUP_ID`。密钥字段使用密码输入，不会预填或展示服务器密钥。
+
+本地回归检查：`python -m unittest test_llm_settings test_routing_parameters test_cloud_plotting -v`。
+
 **Q: 服务启动后出现 healthz connection reset？**
 A: 这表示内部健康检查连接被重置，需结合前后日志检查进程重启或资源超限。
 旧版多场次巨图可能产生很高的内存峰值；先确认云端正在运行包含本节图表修复的版本。

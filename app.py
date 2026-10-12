@@ -14,6 +14,7 @@ from typing import List, Dict, Tuple
 from io import StringIO
 
 from src.llm_api import call_minimax
+from src.app.llm_settings import render_llm_settings
 from src.data_agent import (
     clean_data_with_sandbox, infer_timestep, infer_timestep_by_llm, get_timestep_info,
     detect_flood_events, FloodEvent
@@ -309,6 +310,7 @@ with st.sidebar:
     st.markdown("### 🤖 AI Agent 状态")
     agent_status = st.empty()
     agent_status.success("🟢 智能Agent就绪")
+    render_llm_settings()
     
     # 模型加载状态检查
     st.markdown("### 📊 模型状态")
