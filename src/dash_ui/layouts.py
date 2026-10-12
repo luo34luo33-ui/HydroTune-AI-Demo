@@ -75,7 +75,7 @@ def sidebar():
             html.Div([html.P('导入参数模式：选择后点击确认，参数随输入一起生效。',className='hint'),
                       *[html.Div([html.Small(name),upload({'type':'parameter-upload','model':name},'参数 CSV')]) for name in models]],id='parameter-uploads'),
             html.Button('确认并分析',id='confirm',className='primary full'),
-            html.P('仅执行数据预分析；模型率定和智能报告单独启动。',className='hint'),
+            html.P('支持仅上传空间文件展示流域概况；模型率定和智能报告单独启动。',className='hint'),
         ],True),
         group('率定算法', [
             field('优化方法',dropdown('algorithm',list(ALGORITHMS),'两阶段算法(推荐)')),

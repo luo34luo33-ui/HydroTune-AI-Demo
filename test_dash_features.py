@@ -54,7 +54,7 @@ def test_uploaded_modes_keep_real_results(mode, count):
     assert 'SECRET-FOR-TEST' not in build_snapshot(result)
 
 
-def _basin_files():
+def _basin_files(dtype='float32'):
     with TemporaryDirectory(dir=Path.cwd()) as directory:
         base = Path(directory, 'basin.shp')
         gpd.GeoDataFrame(geometry=[box(.2, .2, .8, .8)], crs='EPSG:4326').to_file(base)
@@ -65,9 +65,9 @@ def _basin_files():
         boundary = packed.getvalue()
     with MemoryFile() as memory:
         with memory.open(driver='GTiff', width=10, height=10, count=1,
-                         dtype='float32', crs='EPSG:4326',
+                         dtype=dtype, crs='EPSG:4326',
                          transform=from_origin(0, 1, .1, .1), nodata=-9999) as dem:
-            dem.write(np.arange(100, dtype='float32').reshape(10, 10), 1)
+            dem.write(np.arange(100, dtype=dtype).reshape(10, 10), 1)
         raster = memory.read()
     return boundary, raster
 

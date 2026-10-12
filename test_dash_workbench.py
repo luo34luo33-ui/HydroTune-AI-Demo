@@ -216,6 +216,45 @@ def test_bad_spatial_zip_does_not_discard_hydro_analysis(files,config):
     assert state['confirmed_files']==['hydro','space']
 
 
+def test_spatial_only_confirmation_with_integer_dem(config):
+    from test_dash_features import _basin_files
+    from src.dash_ui.presentation import render, charts_for
+    boundary,dem=_basin_files('int16')
+    app=create_app()
+    with app.server.test_request_context('/'):
+        state=tasks.current()
+        tasks.configure(state,config)
+        state['pending']={'boundary':dict(name='boundary.zip',content=boundary,kind='boundary'),
+                          'dem':dict(name='dem.tif',content=dem,kind='dem')}
+        with patch.object(analysis,'preprocess',side_effect=AssertionError('no hydrology provided')),patch.object(
+                analysis,'call_minimax',side_effect=AssertionError('no LLM requested')):
+            tasks.submit(state,'confirm')
+            tasks.workers.submit(lambda:None).result(timeout=15)
+    assert state['prepared'] is None
+    assert state['basin']['min_m']==22
+    assert state['basin']['max_m']==77
+    assert not state['space_error']
+    assert charts_for(state,'data')[0]['title']=='流域概况'
+    assert all('name' in trace for trace in charts_for(state,'data')[0]['figure']['data'])
+    assert '流域概况' in str(render(state,'data',None,[], 'all',None,None,'NSE'))
+    with pytest.raises(ValueError,match='确认并分析'):
+        tasks.submit(state,'simulate')
+    tasks.configure(state,{**config,'area':200})
+    assert state['stale_data']
+
+
+def test_dem_only_confirmation_explains_missing_boundary(config):
+    app=create_app()
+    with app.server.test_request_context('/'):
+        state=tasks.current()
+        tasks.configure(state,config)
+        state['pending']={'dem':dict(name='dem.tif',content=b'dem',kind='dem')}
+        tasks.submit(state,'confirm')
+        tasks.workers.submit(lambda:None).result(timeout=15)
+    assert '补充 SHP ZIP' in state['space_error']
+    assert state['prepared'] is None
+
+
 def test_deepseek_key_is_scoped_to_current_request():
     from src.llm_api import call_minimax, llm_settings, get_llm_config
     with patch('src.llm_api._get_secret',return_value=''),patch('src.llm_api._request_chat',return_value='OK') as request:

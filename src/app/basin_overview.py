@@ -93,11 +93,11 @@ def build_basin_overview(shapefile_zip: bytes, dem_tiff: bytes = None) -> dict:
                 raise ValueError('流域范围内没有有效的 DEM 高程像元。')
             # The full clipped raster is used for statistics; only the browser view is sampled.
             stride = max(1, int(np.ceil(max(elevation.shape) / 750)))
-            view = elevation[::stride, ::stride].filled(np.nan).astype(float)
+            view = elevation[::stride, ::stride].astype(float).filled(np.nan)
             rows, cols = view.shape
             x = transform.c + (np.arange(cols) * stride + 0.5) * transform.a
             y = transform.f + (np.arange(rows) * stride + 0.5) * transform.e
-            fig = go.Figure(go.Heatmap(x=x, y=y, z=view, colorscale='Earth',
+            fig = go.Figure(go.Heatmap(x=x, y=y, z=view, colorscale='Earth', name='高程',
                                        colorbar={'title': '高程 (m)'}, hovertemplate='高程 %{z:.1f} m<extra></extra>'))
             polygons = list(local.geoms) if hasattr(local, 'geoms') else [local]
             for polygon in polygons:

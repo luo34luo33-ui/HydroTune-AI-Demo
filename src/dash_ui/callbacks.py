@@ -138,8 +138,8 @@ def register(app):
             value=state['progress']
             return [state['phase'],round(value*100) if value is not None else None,'运行中' if state['busy'] else '就绪',state['llm_status'],
                     {} if state['busy'] or value is not None else {'display':'none'},
-                    '服务端会话已失效（可能因服务重启或长时间未使用），请重新选择并确认数据。' if had_confirmed and state['prepared'] is None else '',
-                    bool(had_confirmed or state['prepared'] is not None),
+                    '服务端会话已失效（可能因服务重启或长时间未使用），请重新选择并确认数据。' if had_confirmed and state['confirmed_config'] is None else '',
+                    bool(had_confirmed or state['confirmed_config'] is not None),
                     not bool(state['reports'].get('report')),not bool(state['posts'].get('xgb',{}).get('corrected_flow'))]+[state['busy'] for action in ACTIONS]
 
     @app.callback(Output('file-list','children'),Output('file-list-key','data'),Input('poll','n_intervals'),State('file-list-key','data'))

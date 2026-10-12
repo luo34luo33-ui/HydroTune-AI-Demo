@@ -53,7 +53,7 @@ def configure(state, config):
         if previous is None:
             return
         if any(previous[k] != config[k] for k in DATA_KEYS):
-            state['stale_data'] = state['prepared'] is not None
+            state['stale_data'] = state['prepared'] is not None or state['basin'] is not None
             state['stale_simulation'] = state['simulation'] is not None
             state['reports'] = {}
         elif any(previous[k] != config[k] for k in SIMULATION_KEYS):
@@ -70,8 +70,8 @@ def submit(state, action):
             raise ValueError('当前任务尚未完成。')
         if action not in ('test-llm',) and state['config_error']:
             raise ValueError(state['config_error'])
-        if action == 'confirm' and not any(f['kind'] == 'hydro' for f in state['pending'].values()):
-            raise ValueError('请先选择水文数据文件。')
+        if action == 'confirm' and not any(f['kind'] in ('hydro','boundary','dem') for f in state['pending'].values()):
+            raise ValueError('请先选择水文数据或流域空间文件。')
         if action not in ('confirm','test-llm') and (state['prepared'] is None or state['stale_data']):
             raise ValueError('请先确认并分析当前数据。')
         if action in ('bma','xgb','stage-report','report') and state['stale_simulation']:
@@ -98,7 +98,8 @@ def run(state, snapshot, action, job_id, version):
         config = snapshot['config']
         if action == 'confirm':
             files = list(snapshot['pending'].values())
-            prepared = analysis.preprocess([(f['name'],f['content']) for f in files if f['kind']=='hydro'], config)
+            hydro = [(f['name'],f['content']) for f in files if f['kind']=='hydro']
+            prepared = analysis.preprocess(hydro, config) if hydro else None
             spatial = {f['kind']:f['content'] for f in files if f['kind']!='hydro'}
             basin, space_error = None, ''
             if 'boundary' in spatial:

@@ -33,7 +33,10 @@ def markdown(text):
 
 def charts_for(state, module):
     if module == 'data':
-        return state['prepared']['charts'] if state['prepared'] else []
+        charts = list(state['prepared']['charts']) if state['prepared'] else []
+        if state['basin']:
+            charts.append({'title':'流域概况','figure':state['basin']['figure']})
+        return charts
     if not state['simulation']:
         return []
     charts=combine_charts(state['simulation'],state['posts'] if module=='post' else {})
@@ -91,10 +94,23 @@ def filtered_figure(state, module, choice, series, phase, start, end, metric='NS
     return fig
 
 
+def basin_card(state):
+    if state['basin']:
+        basin = state['basin']
+        labels = {'area_km2':'流域面积 (km²)','min_m':'最低高程 (m)',
+                  'max_m':'最高高程 (m)','mean_m':'平均高程 (m)','crs':'坐标系'}
+        return card('流域概况',table([{labels.get(k,k):v for k,v in basin.items() if k!='figure'}]),
+                    dcc.Graph(figure=basin['figure'],config={'responsive':True,'displaylogo':False}))
+    return empty('流域概况',state['space_error'] or '尚未确认流域空间数据。可上传 SHP ZIP，DEM 为可选项。')
+
+
 def render(state,module,choice,series,phase,start,end,metric):
     prepared,simulation = state['prepared'],state['simulation']
     if prepared is None:
-        return empty('从一份水文数据开始','在左侧选择文件、设置字段，然后点击“确认并分析”。')
+        if module == 'data' and (state['basin'] or state['space_error']):
+            return [html.Div('数据配置已变化，请重新确认并分析。' if state['stale_data'] else
+                             '当前仅展示空间数据；水文统计与模型模拟需另行上传水文时序。',className='notice'),basin_card(state)]
+        return empty('从一份数据开始','在左侧选择水文或流域空间文件，然后点击“确认并分析”。')
     notices = []
     if state['stale_data']:
         notices.append(html.Div('数据配置已变化。下方为此前结果，请重新确认并分析。',className='notice warning'))
@@ -108,12 +124,7 @@ def render(state,module,choice,series,phase,start,end,metric):
                    card('基础数据概况',table(prepared['stats']),*[html.P(w,className='hint') for w in prepared['warnings']]),
                    card('洪水统计',table(prepared['semantic_events'])),
                    card('智能预分析报告',markdown(state['reports'].get('pre-report')))]
-        if state['basin']:
-            basin = state['basin']
-            facts = [{k:v for k,v in basin.items() if k!='figure'}]
-            content.append(card('流域概况',table(facts),dcc.Graph(figure=basin['figure'],config={'responsive':True,'displaylogo':False})))
-        else:
-            content.append(empty('流域概况',state['space_error'] or '尚未确认流域空间数据。可上传 SHP ZIP，DEM 为可选项。'))
+        content.append(basin_card(state))
     elif module=='simulation':
         if simulation is None:
             return notices+[empty('准备运行水文模型','确认左侧模型、算法与参数，然后点击“启动模型运行”。')]
