@@ -50,6 +50,12 @@ def sidebar():
             html.Div([html.Button('保存配置', id='save-llm'), html.Button('测试连接', id='test-llm', className='secondary')], className='button-row'),
             html.Div(id='llm-message', role='status'), html.Div(id='llm-status', className='hint', role='status'),
         ]),
+        group('当前注册模型', [
+            dcc.Checklist(id='models',options=[{'label':html.Div([html.Strong(name),html.Small(
+                (model.__doc__ or model.model_type).strip().splitlines()[0].split(' - ')[0][:70]),
+                html.Small('支持小时与日尺度' if model.supports_hourly else '仅支持日尺度')],className='model-option'),'value':name} for name,model in models.items()],
+                value=list(models),persistence='hbv',persistence_type='session'),
+        ],True),
         group('运行与数据配置', [
             field('上传模式', dropdown('mode', list(UPLOAD_MODES), UPLOAD_MODES[0])),
             field('流域面积 · km²', number('area',150.7944,.1,100000,.0001)),
@@ -61,14 +67,6 @@ def sidebar():
             group('上游出库汇流', [check('routing','启用上游汇流'),check('routing_fixed','固定马斯京根参数'),
                                   field('k · 计算时间步',number('routing-k',2.5,.5,10,.1)),field('x · 坦化系数',number('routing-x',.25,0,.5,.01))]),
         ], True),
-        group('率定算法', [
-            field('优化方法',dropdown('algorithm',list(ALGORITHMS),'两阶段算法(推荐)')),
-            field('最大迭代配置',number('max_iter',10,5,200)),
-            html.P('两阶段算法按模型维度分配退火与局部优化次数。',className='hint'),
-            *[html.Div([field(label,number(f'algo-{i}-{name}',default,low,high,step)) for name,label,default,low,high,step in fields],
-                       id=f'algo-form-{i}') for i,fields in enumerate(ALGORITHMS.values())],
-            html.P('SCE-UA 固定 5 个复形，每复形点数为参数维度的 2 倍。',id='sce-note',className='hint'),
-        ], True),
         group('上传与确认', [
             upload('hydro-upload','水文数据 · CSV / Excel',True),
             upload('boundary-upload','流域边界 · SHP ZIP'),
@@ -79,16 +77,18 @@ def sidebar():
             html.Button('确认并分析',id='confirm',className='primary full'),
             html.P('仅执行数据预分析；模型率定和智能报告单独启动。',className='hint'),
         ],True),
+        group('率定算法', [
+            field('优化方法',dropdown('algorithm',list(ALGORITHMS),'两阶段算法(推荐)')),
+            field('最大迭代配置',number('max_iter',10,5,200)),
+            html.P('两阶段算法按模型维度分配退火与局部优化次数。',className='hint'),
+            *[html.Div([field(label,number(f'algo-{i}-{name}',default,low,high,step)) for name,label,default,low,high,step in fields],
+                       id=f'algo-form-{i}') for i,fields in enumerate(ALGORITHMS.values())],
+            html.P('SCE-UA 固定 5 个复形，每复形点数为参数维度的 2 倍。',id='sce-note',className='hint'),
+        ]),
         group('XGB 校正配置', [field(label,number(key,value,low,high,step)) for key,label,value,low,high,step in [
             ('xgb_depth','树深度',10,3,15,1),('xgb_rate','学习率',.05,.01,.5,.01),
             ('xgb_estimators','树数量',300,50,500,50),('xgb_seed','随机种子',2025,1,9999,1),
             ('xgb_quantile','残差中心分位',.9,.8,.98,.02),('xgb_ratio','最大校正比例',.45,.1,1,.05)]]+[check('xgb_clip','限制预测误差范围',True)]),
-        group('当前注册模型', [
-            dcc.Checklist(id='models',options=[{'label':html.Div([html.Strong(name),html.Small(
-                (model.__doc__ or model.model_type).strip().splitlines()[0].split(' - ')[0][:70]),
-                html.Small('支持小时与日尺度' if model.supports_hourly else '仅支持日尺度')],className='model-option'),'value':name} for name,model in models.items()],
-                value=list(models),persistence='hbv',persistence_type='session'),
-        ],True),
         html.Div(id='config-note',className='hint',role='status'),
     ],className='sidebar',id='sidebar')
 
