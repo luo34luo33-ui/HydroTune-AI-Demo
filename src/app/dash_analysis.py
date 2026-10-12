@@ -168,6 +168,7 @@ def preprocess(files, config):
                       '最小流量 (m³/s)': float(event['flow'].min()),
                       '平均流量 (m³/s)': float(event['flow'].mean())})
     return {'events': events, 'boundaries': boundaries, 'quality': quality_data,
+            'semantic_boundaries': preanalysis['event_boundaries'], 'timestep': timestep,
             'stats': stats, 'codes': codes, 'quality_object': quality,
             'semantic_events': [{'场次': c.event_id, '峰值 (m³/s)': float(c.peak_flow),
                                   '洪量 (万m³)': float(c.flood_volume), '峰型': c.peak_shape} for c in codes],

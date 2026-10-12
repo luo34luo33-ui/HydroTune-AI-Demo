@@ -33,7 +33,7 @@ def current():
         state = sessions.setdefault(sid, {
             'touched': now, 'pending': {}, 'confirmed_files': [], 'parameters': {}, 'confirmed_parameters': {},
             'config': None, 'config_error': '', 'confirmed_config': None, 'llm': {},
-            'prepared': None, 'simulation': None, 'posts': {}, 'reports': {}, 'basin': None,
+            'prepared': None, 'simulation': None, 'posts': {}, 'reports': {}, 'basin': None, 'semantic_selection': 0,
             'revision': 0, 'input_version': 0, 'job_id': 0, 'busy': False,
             'phase': '等待确认数据', 'progress': None, 'stale_data': False, 'stale_simulation': False,
             'space_error': '', 'llm_status': '使用服务器配置'})
@@ -117,7 +117,7 @@ def run(state, snapshot, action, job_id, version):
                     space_error = str(exc)
             elif 'dem' in spatial:
                 space_error = '已选择 DEM，请补充 SHP ZIP 流域边界。'
-            update = dict(prepared=prepared, simulation=None, posts={}, reports={}, basin=basin,
+            update = dict(prepared=prepared, simulation=None, posts={}, reports={}, basin=basin, semantic_selection=0,
                           space_error=space_error, stale_data=False, stale_simulation=False,
                           confirmed_config=config, confirmed_files=list(snapshot['pending']),confirmed_parameters=snapshot['parameters'])
         elif action == 'simulate':

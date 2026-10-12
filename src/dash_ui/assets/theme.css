@@ -46,3 +46,7 @@ button.dash-dropdown,button.dash-dropdown:hover{background:#fbfdff;color:var(--i
 @media(max-width:600px){.filter-grid{grid-template-columns:1fr}}
 
 .folding-card>summary{font-size:16px;font-weight:650;color:var(--navy);cursor:pointer}.folding-body{padding-top:18px}.folding-card[open]>summary{border-bottom:1px solid #eef2f6;padding-bottom:14px}
+/* Flood portraits reuse the workbench cards and responsive metric grid. */
+.semantic-tags{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}
+.semantic-tag{color:#09656d;background:#eaf7f7;border:1px solid #cce9e9;border-radius:20px;padding:5px 12px;font-size:13px;font-weight:600}
+#semantic-detail .kpi-grid{margin:16px 0}

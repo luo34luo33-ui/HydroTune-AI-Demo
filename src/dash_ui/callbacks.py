@@ -10,7 +10,7 @@ from . import tasks
 from .configuration import ALGORITHMS, CONFIG_IDS, parse_config
 from .layouts import MODULES
 from .snapshot import build_snapshot
-from .presentation import charts_for, filtered_figure, render
+from .presentation import charts_for, filtered_figure, render, semantic_detail
 
 ACTIONS=['confirm','simulate','bma','xgb','pre-report','stage-report','report','test-llm']
 
@@ -22,6 +22,16 @@ def file_list(state):
 
 
 def register(app):
+    @app.callback(Output('semantic-detail','children'),Input('semantic-event','value'))
+    def select_semantic_event(index):
+        with tasks.lock:
+            state=tasks.current()
+            prepared=state['prepared']
+            if prepared is None or not isinstance(index,int) or not 0 <= index < len(prepared['codes']):
+                return no_update
+            state['semantic_selection']=index
+        return semantic_detail(prepared,index)
+
     @app.callback(Output('reset-token','data'),Input('reset-session','n_clicks'),prevent_initial_call=True)
     def reset_session(_):
         tasks.reset()
@@ -52,7 +62,7 @@ def register(app):
                 return no_update,'请先完成数据分析，再保存运行结果。'
             snapshot=deepcopy({key:state[key] for key in (
                 'prepared','simulation','posts','reports','basin','confirmed_config',
-                'stale_data','stale_simulation','space_error')})
+                'stale_data','stale_simulation','space_error','semantic_selection')})
         return {'content':build_snapshot(snapshot),'filename':'HydroTune-results.html','type':'text/html'},'已保存完整展示页面，可离线打开。'
 
     @app.callback(Output('landing','style'),Output('workspace','style'),Output('module-tabs','value'),Output('url','search'),

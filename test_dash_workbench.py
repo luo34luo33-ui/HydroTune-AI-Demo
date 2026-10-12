@@ -46,6 +46,64 @@ def test_confirmation_only_computes_preanalysis(files,config):
     assert prepared['preanalysis_report']==''
 
 
+def test_semantic_portraits_link_duplicate_event_dates_to_correct_files(files,config):
+    from src.dash_ui.semantics import options, portrait, code_rows
+    frame=pd.read_csv(BytesIO(files[0][1]))
+    frame['date']=pd.date_range('2020-01-01',periods=32,freq='h')
+    config.update(mode=analysis.UPLOAD_MODES[2],timestep='hourly')
+    first=frame.to_csv(index=False).encode()
+    frame['flow']*=3
+    second=frame.to_csv(index=False).encode()
+    with patch.object(analysis.SemanticPreAnalyzer,'generate_base64_plot',side_effect=AssertionError('unexpected LLM preparation')):
+        prepared=analysis.preprocess([('first.csv',first),('second.csv',second)],config)
+    assert prepared['codes'][0].event_id==prepared['codes'][1].event_id
+    assert [item['value'] for item in options(prepared)]==[0,1]
+    first_view,second_view=portrait(prepared,0),portrait(prepared,1)
+    assert first_view['source']=='first.csv' and second_view['source']=='second.csv'
+    assert second_view['metrics'][0][1]==f'{frame.flow.max():,.2f}'
+    assert first_view['metrics'][2][2]=='小时'
+    assert '2020-01-02 07:00' in first_view['period']
+    assert pd.Timestamp(second_view['figure']['data'][0]['x'][0])==pd.Timestamp('2020-01-01')
+    assert len(code_rows(prepared)[0])==1+len(prepared['codes'][0].to_dict())
+
+
+def test_semantic_portrait_preserves_detected_boundaries_and_missing_dates(files,config):
+    from src.dash_ui.semantics import portrait
+    boundaries=[dict(start_idx=3,end_idx=12,peak_idx=12,peak_flow=7)]
+    with patch.object(analysis.SemanticPreAnalyzer,'detect_flood_events',return_value=boundaries):
+        prepared=analysis.preprocess(files,config)
+    view=portrait(prepared,0)
+    assert len(view['figure']['data'][0]['x'])==10
+    assert pd.Timestamp(view['figure']['data'][0]['x'][0])==pd.Timestamp('2020-01-04')
+    assert view['metrics'][2][1:] == ('10','天')
+    prepared['events'][0]['dates']=pd.Series([None]*32)
+    view=portrait(prepared,0)
+    assert view['figure']['layout']['xaxis']['type']=='linear'
+    assert '不代表真实日期' in view['period']
+
+
+def test_semantic_selection_is_read_only_and_exported(files,config):
+    from src.dash_ui.snapshot import build_snapshot
+    config['mode']=analysis.UPLOAD_MODES[2]
+    prepared=analysis.preprocess(files+[('second.csv',files[0][1])],config)
+    app=create_app()
+    with app.server.test_request_context('/'):
+        state=tasks.current()
+        state.update(prepared=prepared,confirmed_config=config)
+        before=(state['revision'],state['input_version'],state['job_id'])
+        choose=app.callback_map['semantic-detail.children']['callback'].__wrapped__
+        with patch.object(tasks,'submit',side_effect=AssertionError('selection submitted a job')):
+            assert choose(1)
+            assert choose(99) is __import__('dash').no_update
+        assert (state['revision'],state['input_version'],state['job_id'])==before
+        assert state['semantic_selection']==1
+        exported=build_snapshot(state)
+    assert '<option value="1" selected>' in exported
+    assert 'selector.addEventListener(\'change\',showEvent)' in exported
+    assert '完整语义编码表' in exported and '代表性规则评分' in exported
+    assert 'second.csv' in exported and '非洪水等级或重现期' in exported
+
+
 def test_process_chart_uses_real_dates_and_preserves_missing_time_fallback(files,config):
     prepared=analysis.preprocess(files,config)
     figure=prepared['charts'][0]['figure']

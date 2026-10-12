@@ -788,6 +788,7 @@ Please respond in Markdown format, keeping it professional and concise, covering
         
         return {
             'semantic_codes': semantic_codes,
+            'event_boundaries': event_boundaries,
             'quality': quality,
             'llm_report': llm_report,
             'base64_plot': base64_plot,

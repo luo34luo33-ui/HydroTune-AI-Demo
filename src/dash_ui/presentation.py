@@ -4,6 +4,7 @@ from dash import dcc, html
 import pandas as pd
 import plotly.graph_objects as go
 from src.app.dash_analysis import combine_charts, summary
+from .semantics import NOTE, code_rows, options, portrait
 
 
 def card(title, *children):
@@ -95,6 +96,29 @@ def basin_card(state):
     return empty('流域概况',state['space_error'] or '尚未确认流域空间数据。可上传 SHP ZIP，DEM 为可选项。')
 
 
+def semantic_detail(prepared, index):
+    view = portrait(prepared, index)
+    return [html.P(f"来源：{view['source']} · {view['period']}",className='hint'),
+            html.Div([html.Span(tag,className='semantic-tag') for tag in view['tags']],className='semantic-tags'),
+            html.Div([kpi(label,value,unit) for label,value,unit in view['metrics']],className='kpi-grid'),
+            html.P(view['sentence'],className='notice'),
+            dcc.Graph(figure=view['figure'],config={'responsive':True,'displaylogo':False}),
+            html.P('浅青区域：起点至主峰；浅蓝区域：主峰至终点。多峰场次以主峰划分，仅作过程定位。',className='hint')]
+
+
+def semantic_card(state):
+    prepared = state['prepared']
+    if not prepared['codes']:
+        return card('洪水语义画像',html.P('当前没有可展示的洪水编码。',className='hint'))
+    index = state.get('semantic_selection',0)
+    return card('洪水语义画像',html.P('选择一场洪水，查看已有编码与对应过程。',className='hint'),
+                dcc.Dropdown(id='semantic-event',options=options(prepared),value=index,clearable=False),
+                html.Div(semantic_detail(prepared,index),id='semantic-detail'),
+                html.P(NOTE,className='hint'),
+                html.Details([html.Summary('完整语义编码表'),table(code_rows(prepared)),
+                              html.P('代表性评分为现有规则评分，不表示概率或模型置信度。',className='hint')]))
+
+
 def render(state,module,choice,series,phase,metric):
     prepared,simulation = state['prepared'],state['simulation']
     if prepared is None:
@@ -114,6 +138,7 @@ def render(state,module,choice,series,phase,metric):
                              kpi('原始流量有效率',f'{100*(count-missing)/count:.1f}','%'),kpi('识别洪水',len(prepared['codes']),'场')],className='kpi-grid'),
                    card('基础数据概况',table(prepared['stats']),*[html.P(w,className='hint') for w in prepared['warnings']]),
                    card('洪水统计',table(prepared['semantic_events'])),
+                   semantic_card(state),
                    card('智能预分析报告',markdown(state['reports'].get('pre-report')))]
         content.append(basin_card(state))
     elif module=='simulation':
