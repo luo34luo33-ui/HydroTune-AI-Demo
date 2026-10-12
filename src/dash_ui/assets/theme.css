@@ -44,3 +44,5 @@ button.dash-dropdown,button.dash-dropdown:hover{background:#fbfdff;color:var(--i
 
 @media(max-width:1250px){.filter-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:600px){.filter-grid{grid-template-columns:1fr}}
+
+.folding-card>summary{font-size:16px;font-weight:650;color:var(--navy);cursor:pointer}.folding-body{padding-top:18px}.folding-card[open]>summary{border-bottom:1px solid #eef2f6;padding-bottom:14px}

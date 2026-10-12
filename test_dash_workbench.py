@@ -104,6 +104,19 @@ def test_llm_failure_keeps_results_and_no_key_in_report(files,config):
     assert prepared['stats']
 
 
+def test_stage_report_requests_analysis_first_and_summary_last(files,config):
+    prepared=analysis.preprocess(files,config)
+    simulation=analysis.simulate(prepared,config,imported_parameters())
+    with patch.object(analysis,'call_minimax',return_value='## 模型表现\n真实结果\n\n## 小结\n继续验证。') as call:
+        report=analysis.generate_report(prepared,simulation,kind='阶段')
+    prompt=call.call_args.args[0]
+    assert '直接从模型模拟表现开始' in prompt
+    assert '不要设置“报告范围与证据边界”' in prompt
+    assert '不逐行复述文件清单' in prompt
+    assert call.call_args.kwargs==dict(max_output_tokens=8192,continuations=2)
+    assert report.endswith('继续验证。')
+
+
 def test_sessions_isolated_and_stale_task_cannot_publish(files,config):
     app=create_app()
     with app.server.test_request_context('/'):

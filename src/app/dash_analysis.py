@@ -357,8 +357,15 @@ def generate_report(prepared, simulation=None, posts=None, settings=None, kind='
     evidence['后处理'] = {name: {'权重': p['weights'], '指标': summary(p['metrics']), '说明': p['warnings']} for name,p in (posts or {}).items()}
     evidence['评估条件'] = 'BMA 按本场观测 NSE 计算权重；多场 XGB 校正使用真实误差滞后，属于回顾性评估。未提供收敛轨迹或参数敏感性分析。'
     text = json.dumps(evidence, ensure_ascii=False, cls=PlotlyJSONEncoder)
+    instructions = ('正文以分析结论为主，约 1200–1800 字；数据概况简要汇总，不逐行复述文件清单、'
+                    '洪水统计或参数表。指标表仅列模型与率定/验证汇总，避免大量数据表耗尽输出篇幅。'
+                    '必须完整覆盖本阶段已运行的分析内容，并以“## 小结”收尾。')
+    if kind == '阶段':
+        instructions += ('直接从模型模拟表现开始，不要添加开场免责声明，也不要设置“报告范围与证据边界”'
+                         '段落或章节；必要的评估条件在对应结论处简要注明。小结概括当前效果与下一步建议。')
     with llm_settings(settings):
-        report = call_minimax('请根据以下真实计算证据生成'+kind+' Markdown 分析报告。标明未运行步骤和缺少证据的项目；不得编造指标、排名、收敛轨迹或敏感性结论。\n'+text)
+        report = call_minimax('请根据以下真实计算证据生成'+kind+' Markdown 分析报告。标明未运行步骤和缺少证据的项目；不得编造指标、排名、收敛轨迹或敏感性结论。'+instructions+'\n'+text,
+                              max_output_tokens=8192,continuations=2)
     if report.startswith('[ERROR]'):
         return '### 智能分析暂不可用\n\n'+report+'\n\n确定性统计结果仍可在工作台查看。'
     return report

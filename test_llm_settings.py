@@ -87,6 +87,31 @@ class LLMClientTests(unittest.TestCase):
             {'message': {'content': ''}, 'finish_reason': 'length'}]})):
             self.assertIn('长度上限', api.call_minimax('test'))
 
+    def test_long_report_continues_partial_markdown_and_keeps_whitespace(self):
+        self.state['llm_settings'] = dict(provider='deepseek',api_key='visitor-key')
+        first=response(data={'choices':[{'message':{'content':'|日期|值|\n|---|---|\n|2020-01-'},'finish_reason':'length'}]})
+        last=response(data={'choices':[{'message':{'content':'01|2|\n\n## 小结\n\n模拟已完成。\n'},'finish_reason':'stop'}]})
+        with patch.object(api.requests,'post',side_effect=[first,last]) as post:
+            text=api.call_minimax('report',max_output_tokens=8192,continuations=2)
+        self.assertIn('|2020-01-01|2|\n\n## 小结',text)
+        self.assertTrue(text.endswith('模拟已完成。\n'))
+        self.assertEqual(post.call_count,2)
+        self.assertEqual(post.call_args.kwargs['json']['max_tokens'],8192)
+        self.assertEqual(post.call_args.kwargs['json']['messages'][-2]['content'],'|日期|值|\n|---|---|\n|2020-01-')
+
+    def test_continuation_is_bounded_and_failure_keeps_partial_answer(self):
+        self.state['llm_settings'] = dict(provider='minimax',api_key='visitor-key')
+        cut=response(data={'choices':[{'message':{'content':'部分分析。'},'finish_reason':'length'}]})
+        with patch.object(api.requests,'post',return_value=cut) as post:
+            text=api.call_minimax('report',continuations=2)
+        self.assertEqual(post.call_count,3)
+        self.assertIn('内容尚未完成',text)
+        with patch.object(api.requests,'post',side_effect=[cut,response(429)]):
+            text=api.call_minimax('report',continuations=2)
+        self.assertIn('部分分析。',text)
+        self.assertIn('续写失败',text)
+        self.assertNotIn('visitor-key',text)
+
 
 class LLMSettingsUITests(unittest.TestCase):
     def test_entrypoints_start_with_collapsed_password_settings(self):

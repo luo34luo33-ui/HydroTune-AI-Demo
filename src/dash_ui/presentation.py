@@ -10,6 +10,10 @@ def card(title, *children):
     return html.Section([html.Div([html.H2(title)],className='card-heading'),*children],className='card')
 
 
+def folding_card(title, *children):
+    return html.Details([html.Summary(title),html.Div(children,className='folding-body')],className='card folding-card',open=False)
+
+
 def empty(title, text):
     return html.Div([html.Span('HYDROTUNE',className='eyebrow'),html.H2(title),html.P(text)],className='empty-state card')
 
@@ -116,9 +120,9 @@ def render(state,module,choice,series,phase,metric):
         if simulation is None:
             return notices+[empty('准备运行水文模型','确认左侧模型、算法与参数，然后点击“启动模型运行”。')]
         rows = simulation['metrics']
-        content = [card('率定与验证效果',table(summary(rows))),card('模型参数',table([
+        content = [card('率定与验证效果',table(summary(rows))),folding_card('模型参数',table([
             {'模型':name,'参数':key,'值':value} for name,params in simulation['parameters'].items() for key,value in params.items()])),
-                   card('逐文件指标',table(rows)),card('阶段分析报告',markdown(state['reports'].get('stage-report'))),
+                   folding_card('逐场次评价指标',table(rows)),card('阶段分析报告',markdown(state['reports'].get('stage-report'))),
                    html.P('仅展示优化器真实反馈；当前未记录完整收敛轨迹，不绘制推算的收敛曲线。',className='hint'),
                    *[html.Div(w,className='notice warning') for w in simulation['warnings']]]
     elif module=='post':
@@ -127,10 +131,11 @@ def render(state,module,choice,series,phase,metric):
         content = [html.Div('BMA 按本场观测 NSE 计算权重；多场 XGB 使用真实误差滞后，属于回顾性评估。',className='notice')]
         for kind,title in [('bma','BMA 模型融合'),('xgb','XGB 误差校正')]:
             post=state['posts'].get(kind)
+            result_card=folding_card if kind=='bma' else card
             if not post:
-                content.append(empty(title,'尚未运行。使用上方按钮启动。'))
+                content.append(result_card(title,html.P('尚未运行。使用上方按钮启动。',className='hint')))
             else:
-                content.append(card(title,table(post['weights']) if kind=='bma' else html.P('校正前指标见下方模型比较。',className='hint'),
+                content.append(result_card(title,table(post['weights']) if kind=='bma' else html.P('校正前指标见下方模型比较。',className='hint'),
                                     table(summary(post['metrics'])),*[html.Div(w,className='notice warning') for w in post['warnings']]))
         rows=simulation['metrics']+[r for post in state['posts'].values() for r in post['metrics']]
         if phase!='all':

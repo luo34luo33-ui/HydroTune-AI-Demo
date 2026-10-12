@@ -89,7 +89,7 @@ def _error(provider, message):
     return result
 
 
-def _request_chat(provider, url, key, payload):
+def _request_chat(provider, url, key, payload, *, continuations=0):
     en = get_language() == 'en'
     try:
         response = requests.post(url, json=payload, headers={
@@ -120,13 +120,26 @@ def _request_chat(provider, url, key, payload):
         choices = data.get("choices") or []
         content = choices[0].get("message", {}).get("content") if choices else None
         if isinstance(content, str):
-            content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
-        if not content or not isinstance(content, str) or content.startswith("<think>"):
+            content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
+        if not isinstance(content, str) or not content.strip() or content.lstrip().startswith("<think>"):
             length = bool(choices and choices[0].get("finish_reason") == "length")
             return _error(provider, (
                 "Token limit reached before answer" if en else "生成达到长度上限，尚未输出答案"
             ) if length else ("Empty response" if en else "服务返回空内容"))
         content = content.replace(key, "[REDACTED]") if key else content
+        if choices[0].get('finish_reason') == 'length':
+            if continuations:
+                followup = {**payload, 'messages': payload['messages'] + [
+                    {'role':'assistant','content':content},
+                    {'role':'user','content':('Continue exactly where the previous answer stopped, completing the interrupted sentence or table row. Do not repeat text or add a continuation preface. Finish the analysis and end with a summary.' if en else
+                                             '从上一条正文中断处紧接着续写，先补完中断的句子或表格行，不重复已有文字，不加续写说明。完成剩余分析，并以小结收尾。')}]}
+                remainder = _request_chat(provider,url,key,followup,continuations=continuations-1)
+                if remainder.startswith('[ERROR]'):
+                    return content+('\n\n> Report incomplete; continuation failed: '+remainder+'. Please regenerate the report.' if en else
+                                    '\n\n> 报告尚未完成，续写失败：'+remainder+'。请重新生成报告。')
+                return content+remainder
+            content += ('\n\n> Output limit reached; the report is incomplete. Please regenerate the report.' if en else
+                        '\n\n> 报告达到输出长度上限，内容尚未完成。请重新生成报告。')
         state = _session_state()
         if state is not None:
             state.pop("llm_last_error", None)
@@ -139,16 +152,16 @@ def _request_chat(provider, url, key, payload):
         return _error(provider, "Invalid API response" if en else "API 返回格式异常")
 
 
-def _call_deepseek(prompt: str, system_prompt: str, api_key: str) -> str:
+def _call_deepseek(prompt: str, system_prompt: str, api_key: str, *, max_output_tokens=None, continuations=0) -> str:
     messages = ([{"role": "system", "content": system_prompt}] if system_prompt else [])
     messages.append({"role": "user", "content": prompt})
     return _request_chat("DeepSeek", DEEPSEEK_API_URL, api_key, {
         "model": "deepseek-chat", "messages": messages,
-        "temperature": 0.7, "max_tokens": 2048, "stream": False,
-    })
+        "temperature": 0.7, "max_tokens": max_output_tokens or 2048, "stream": False,
+    },continuations=continuations)
 
 
-def call_minimax(prompt: str, system_prompt: str = "") -> str:
+def call_minimax(prompt: str, system_prompt: str = "", *, max_output_tokens=None, continuations=0) -> str:
     """Shared dispatcher; explicit MiniMax selection overrides automatic DeepSeek."""
     config = get_llm_config()
     if config["provider"] not in ("auto", "minimax", "deepseek"):
@@ -158,7 +171,7 @@ def call_minimax(prompt: str, system_prompt: str = "") -> str:
     if config["provider"] == "deepseek" or (config["provider"] == "auto" and ds_key):
         if not ds_key:
             return _error("DeepSeek", "DEEPSEEK_API_KEY 未配置 / not configured")
-        return _call_deepseek(prompt, system_prompt, ds_key)
+        return _call_deepseek(prompt, system_prompt, ds_key,max_output_tokens=max_output_tokens,continuations=continuations)
     if not config["api_key"]:
         return _error("MiniMax", "MINIMAX_API_KEY 未配置，请展开侧栏设置 / configure in sidebar")
     if config["region"] not in MINIMAX_ENDPOINTS:
@@ -169,6 +182,6 @@ def call_minimax(prompt: str, system_prompt: str = "") -> str:
     )}, {"role": "user", "content": prompt}]
     return _request_chat("MiniMax", MINIMAX_ENDPOINTS[config["region"]], config["api_key"], {
         "model": config["model"], "messages": messages,
-        "max_completion_tokens": 8192, "reasoning_split": True,
+        "max_completion_tokens": max_output_tokens or 8192, "reasoning_split": True,
         "temperature": 0.7, "stream": False,
-    })
+    },continuations=continuations)

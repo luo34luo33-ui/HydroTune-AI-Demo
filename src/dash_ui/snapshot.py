@@ -54,18 +54,20 @@ def build_snapshot(state):
     section('数据预分析',body,'data')
     body = '<p class="hint">模型模拟尚未运行。</p>'
     if simulation:
-        body = '<h3>率定与验证效果</h3>'+table(summary(simulation['metrics']))+'<h3>逐文件指标</h3>'+table(simulation['metrics'])
-        body += '<h3>模型参数</h3>'+table([{'模型':name,'参数':key,'值':value} for name,params in simulation['parameters'].items() for key,value in params.items()])
+        body = '<h3>率定与验证效果</h3>'+table(summary(simulation['metrics']))+'<details><summary>逐场次评价指标</summary>'+table(simulation['metrics'])+'</details>'
+        body += '<details><summary>模型参数</summary>'+table([{'模型':name,'参数':key,'值':value} for name,params in simulation['parameters'].items() for key,value in params.items()])+'</details>'
         body += warnings(simulation['warnings'])+charts('simulation')
     section('水文模型模拟',body,'simulation')
     body = '<p class="notice">BMA 按本场观测 NSE 计算权重；多场 XGB 使用真实误差滞后，属于回顾性评估。</p>'
     for kind,label in [('bma','BMA 模型融合'),('xgb','XGB 误差校正')]:
         result = state['posts'].get(kind)
-        body += '<h3>'+label+'</h3>'
+        body += '<details><summary>'+label+'</summary>' if kind=='bma' else '<h3>'+label+'</h3>'
         if result:
             body += (table(result['weights']) if kind=='bma' else '')+table(result['metrics'])+warnings(result['warnings'])
         else:
             body += '<p class="hint">尚未运行。</p>'
+        if kind=='bma':
+            body += '</details>'
     if state['posts']:
         body += charts('post')
     section('后处理结果',body,'post')
@@ -82,7 +84,7 @@ def build_snapshot(state):
 <style>
 *{box-sizing:border-box}body{margin:0;background:#F4F7FB;color:#172B4D;font:15px/1.8 Arial,"Microsoft YaHei",sans-serif}
 header{background:linear-gradient(110deg,#092B4C,#08A6AD);color:white;padding:36px max(24px,calc((100vw - 1280px)/2))}header h1{margin:0;font-size:32px}header p{margin:8px 0}
-nav{display:flex;gap:22px;flex-wrap:wrap}nav a{color:white}main{max-width:1328px;padding:24px;margin:auto}section{background:white;border:1px solid #e2eaf0;border-radius:12px;padding:24px;margin:0 0 20px;box-shadow:0 3px 12px #092b4c08;scroll-margin-top:20px}h2{color:#092B4C;border-bottom:1px solid #eaf0f5;padding-bottom:12px}h3{font-size:17px}.hint{color:#64748b}.notice{padding:12px 16px;background:#eaf7f7;border-left:3px solid #08A6AD;border-radius:6px}.table-scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px}td,th{padding:10px 12px;border-bottom:1px solid #edf1f5;text-align:left;white-space:nowrap}th{background:#f4f8fb}.chart{width:100%;min-height:460px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f7fb;padding:16px}img{max-width:100%}footer{padding:16px;text-align:center;color:#64748b}@media(max-width:600px){main{padding:12px}section{padding:16px}.chart{min-height:360px}}
+nav{display:flex;gap:22px;flex-wrap:wrap}nav a{color:white}main{max-width:1328px;padding:24px;margin:auto}section{background:white;border:1px solid #e2eaf0;border-radius:12px;padding:24px;margin:0 0 20px;box-shadow:0 3px 12px #092b4c08;scroll-margin-top:20px}h2{color:#092B4C;border-bottom:1px solid #eaf0f5;padding-bottom:12px}h3{font-size:17px}summary{cursor:pointer;font-weight:600}details{margin:16px 0}.hint{color:#64748b}.notice{padding:12px 16px;background:#eaf7f7;border-left:3px solid #08A6AD;border-radius:6px}.table-scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px}td,th{padding:10px 12px;border-bottom:1px solid #edf1f5;text-align:left;white-space:nowrap}th{background:#f4f8fb}.chart{width:100%;min-height:460px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f7fb;padding:16px}img{max-width:100%}footer{padding:16px;text-align:center;color:#64748b}@media(max-width:600px){main{padding:12px}section{padding:16px}.chart{min-height:360px}}
 </style><script>'''+get_plotlyjs()+'''</script></head><body><header><h1>HydroTune · 运行结果展示</h1>
 <p>大语言模型智能体水文平台 · 离线交互展示</p><p>保存时间：'''+escape(created)+'''</p><nav>
 <a href="#data">数据预分析</a><a href="#simulation">水文模型模拟</a><a href="#post">后处理结果</a><a href="#report">智能分析报告</a>
