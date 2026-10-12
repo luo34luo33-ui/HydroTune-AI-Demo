@@ -7,6 +7,11 @@ from .configuration import ALGORITHMS
 TITLE = 'HydroTune：大语言模型智能体水文平台'
 TAGLINE = '自动化水文建模 | LLM驱动的智能诊断 | 建模效果优化'
 MODULES = {'data':'数据预分析', 'simulation':'水文模型模拟', 'post':'后处理结果', 'report':'智能分析报告'}
+MODEL_INTROS = {
+    'Tank Model': '水箱模型，通过多层串联水箱刻画蓄水、下渗与径流响应，模拟流域降雨径流过程。',
+    'HBV Model': '概念性降雨径流模型，通过土壤水分平衡和快慢水库响应，刻画蒸散发、产流与流域出流。',
+    'XAJ Model': '由赵人俊教授提出，以蓄满产流为核心，适用于湿润与半湿润地区的降雨径流模拟。',
+}
 
 
 def field(label, component):
@@ -52,7 +57,7 @@ def sidebar():
         ]),
         group('当前注册模型', [
             dcc.Checklist(id='models',options=[{'label':html.Div([html.Strong(name),html.Small(
-                (model.__doc__ or model.model_type).strip().splitlines()[0].split(' - ')[0][:70]),
+                MODEL_INTROS.get(name,(model.__doc__ or model.model_type).strip().splitlines()[0].split(' - ')[0][:70])),
                 html.Small('支持小时与日尺度' if model.supports_hourly else '仅支持日尺度')],className='model-option'),'value':name} for name,model in models.items()],
                 value=list(models),persistence='hbv',persistence_type='session'),
         ],True),
