@@ -72,7 +72,7 @@ def test_real_simulation_and_bma_weights(files,config):
     with patch.object(analysis,'call_minimax',side_effect=AssertionError('unexpected LLM')):
         simulation=analysis.simulate(prepared,config,imported_parameters())
         post=analysis.postprocess(prepared,simulation,config,'bma')
-    assert len(simulation['parameters'])==3
+    assert len(simulation['parameters'])==len(config['models'])
     assert sum(row['权重'] for row in post['weights'])==pytest.approx(1)
     assert post['metrics'][0]['模型']=='BMA集成'
     assert all(row['模型']!='BMA集成' for row in simulation['metrics'])
@@ -183,6 +183,11 @@ def test_form_selects_active_algorithm_and_rejects_bad_numbers():
         assert parsed['algo_params']=={key:default for key,_,default,*rest in fields}
     values['max_iter']=2.5
     with pytest.raises(ValueError,match='max_iter'):
+        parse_config([values[id_] for id_ in CONFIG_IDS])
+    values.update(max_iter=5,timestep='hourly',models=['HBV Simple Model'])
+    assert parse_config([values[id_] for id_ in CONFIG_IDS])['models']==['HBV Simple Model']
+    values['models']=['HBV Model']
+    with pytest.raises(ValueError,match='仅支持日尺度'):
         parse_config([values[id_] for id_ in CONFIG_IDS])
 
 
