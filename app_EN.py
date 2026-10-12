@@ -3,6 +3,7 @@ HydroTune-AI Intelligent Watershed Hydrological Model Calibration System
 Streamlit Main Entry (English Version)
 """
 import streamlit as st
+from src.app.routing import render_routing_settings, validate_upstream_columns, simulate_imported_model
 from src.app.plotting import PLOT_DPI, EVENTS_PER_FIGURE, create_event_figure, render_figure
 import pandas as pd
 import numpy as np
@@ -21,7 +22,7 @@ from src.data_agent import (
 )
 from src.hydro_calc import (
     calibrate_model_fast, calc_nse, calc_rmse, calc_mae, calc_pbias, calc_kge,
-    get_model_param_info, generate_param_table, muskingum_routing
+    get_model_param_info, generate_param_table, apply_configured_routing
 )
 from src.data_preanalysis import (
     DataPreAnalyzer, PreAnalysisResult, FloodEvent as PAFloodEvent,
@@ -326,43 +327,6 @@ RECOMMENDED_MODELS = ['HBV Model', 'XAJ Model', 'Tank Model']
 SKIP_MODELS = []
 
 
-def apply_upstream_routing(simulated, upstream_arr, k_routing, x_routing, warmup_steps=0):
-    """Route upstream flow through Muskingum and add to the outlet
-    
-    Note: This function does not handle warm-up period; it should be handled externally by the caller
-    
-    Args:
-        simulated: Model-simulated outlet flow
-        upstream_arr: Upstream inflow
-        k_routing: Muskingum travel time
-        x_routing: Muskingum weighting factor
-        warmup_steps: Warm-up steps (unused, kept for parameter compatibility)
-        
-    Returns:
-        Flow series after routing superposition
-    """
-    if upstream_arr is None:
-        return simulated
-    
-    upstream_arr = np.asarray(upstream_arr)
-    if upstream_arr.size == 0:
-        return simulated
-    
-    # 检查长度一致性
-    if len(upstream_arr) != len(simulated):
-        return simulated
-    
-    # 不再在内部剔除预热期，由调用方统一处理
-    # 再次检查长度
-    if len(upstream_arr) != len(simulated) or upstream_arr.size == 0:
-        return simulated
-    
-    # 马斯京根演算
-    routed = muskingum_routing(upstream_arr, k_routing, x_routing)
-    
-    
-    
-    return simulated + routed
 
 
 with st.sidebar:
@@ -454,6 +418,8 @@ with st.sidebar:
     imported_params = {}
     
     if use_imported_params == "Import Parameters":
+        st.session_state.pop('imported_k_routing', None)
+        st.session_state.pop('imported_x_routing', None)
         st.success("📥 Import Mode: Using parameter files directly")
         
         st.markdown("**Tank Model Parameters:**")
@@ -489,9 +455,12 @@ with st.sidebar:
                 tank_params = {
                     col: float(tank_df[col].values[0])
                     for col in tank_df.columns
-                    if col != '模型' and col not in ['k_routing', 'x_routing']
+                    if col != '模型'
                 }
                 imported_params['Tank Model'] = tank_params
+                if 'k_routing' in tank_params and 'x_routing' in tank_params:
+                    st.session_state['imported_k_routing'] = tank_params['k_routing']
+                    st.session_state['imported_x_routing'] = tank_params['x_routing']
                 st.success(f"✅ Tank model parameters imported: {tank_params}")
             except Exception as e:
                 st.error(f" Tank parameter parse failed: {e}")
@@ -508,6 +477,9 @@ with st.sidebar:
                 hbv_df = pd.read_csv(hbv_param_file)
                 hbv_params = {col: float(hbv_df[col].values[0]) for col in hbv_df.columns if col != '模型'}
                 imported_params['HBV Model'] = hbv_params
+                if 'k_routing' in hbv_params and 'x_routing' in hbv_params:
+                    st.session_state['imported_k_routing'] = hbv_params['k_routing']
+                    st.session_state['imported_x_routing'] = hbv_params['x_routing']
                 st.success(f"✅ HBV model parameters imported: {hbv_params}")
             except Exception as e:
                 st.error(f" HBV parameter parse failed: {e}")
@@ -584,29 +556,12 @@ with st.sidebar:
         )
         column_mapping['upstream'] = upstream_col if upstream_col else ""
         
-        st.markdown("**Muskingum Parameters (Manual):**")
-        col_k, col_x = st.columns(2)
-        with col_k:
-            k_routing = st.number_input(
-                "k (Travel Time)",
-                min_value=0.5,
-                max_value=10.0,
-                value=2.5,
-                step=0.1,
-                help="Muskingum parameter k, representing flood wave travel time"
-            )
-        with col_x:
-            x_routing = st.number_input(
-                "x (Attenuation Factor)",
-                min_value=0.0,
-                max_value=0.5,
-                value=0.25,
-                step=0.01,
-                help="Muskingum parameter x, representing flood wave attenuation"
-            )
+        manual_routing_params = render_routing_settings(
+            import_mode=use_imported_params == "Import Parameters", english=True,
+        )
     else:
         column_mapping['upstream'] = ""
-        k_routing, x_routing = 2.5, 0.25
+        manual_routing_params = None
 
     st.divider()
     
@@ -1123,6 +1078,13 @@ if uploaded_files and len(uploaded_files) > 0:
     # 📥 Data File Processing (executed on button click)
     # ============================================================
     if st.button("🚀 Start Analysis", type="primary", disabled=not col_mapping_accepted):
+        if enable_upstream_routing:
+            try:
+                validate_upstream_columns(file_dfs, column_mapping['upstream'], english=True)
+            except ValueError as exc:
+                st.error(str(exc))
+                st.stop()
+
         
         # ---- Process each file ----
         all_precip = []
@@ -1131,6 +1093,7 @@ if uploaded_files and len(uploaded_files) > 0:
         all_dates = []
         all_file_events = []
         all_upstream_arr = None
+        all_upstream = []
         detected_timestep = 'daily'
         user_timestep = 'daily'
         file_summary = []
@@ -1213,6 +1176,8 @@ if uploaded_files and len(uploaded_files) > 0:
                 all_precip.extend(precip_arr.tolist())
                 all_evap.extend(evap_arr.tolist())
                 all_flow.extend(flow_arr.tolist())
+                if enable_upstream_routing and upstream_arr is not None:
+                    all_upstream.extend(upstream_arr.tolist())
                 if len(flow_arr) > 0:
                     preanalysis_file_boundaries.append({
                         'start_idx': preanalysis_offset,
@@ -1268,6 +1233,7 @@ if uploaded_files and len(uploaded_files) > 0:
         all_precip_arr = np.array(all_precip)
         all_evap_arr = np.array(all_evap)
         all_flow_arr = np.array(all_flow)
+        all_upstream_arr = np.asarray(all_upstream, dtype=float) if enable_upstream_routing else None
         
         dates_for_analysis = parse_dates(first_clean_df['date'])
         
@@ -1364,13 +1330,21 @@ if uploaded_files and len(uploaded_files) > 0:
         
         calibration_results = {}
         
+        def run_configured_model(model_name, precip, evap, flow, **options):
+            if use_imported_params == "Import Parameters":
+                if model_name not in imported_params:
+                    raise ValueError(f"Missing imported parameters: {model_name}")
+                return simulate_imported_model(
+                    model_name, precip, evap, flow,
+                    params=imported_params[model_name], **options,
+                )
+            return calibrate_model_fast(model_name, precip, evap, flow, **options)
+
         def calibrate_model(model_name, precip, evap, flow, upstream=None):
             try:
                 spatial_data = {'area': catchment_area}
-                manual_routing = None
-                if enable_upstream_routing:
-                    manual_routing = {'k_routing': k_routing, 'x_routing': x_routing}
-                return calibrate_model_fast(
+                manual_routing = manual_routing_params if enable_upstream_routing else None
+                return run_configured_model(
                     model_name,
                     precip,
                     evap,
@@ -1491,14 +1465,15 @@ if uploaded_files and len(uploaded_files) > 0:
                         continue
                     if model_name in imported_params:
                         st.write(f"  📥 Using imported parameters for {model_name}...")
-                        params = imported_params[model_name]
+                        params = imported_params[model_name].copy()
                         try:
-                            model = ModelRegistry.get_model(model_name)
-                            simulated = model.run(
-                                calib_events[0]['precip'],
-                                calib_events[0]['evap'],
-                                params,
-                                {'area': catchment_area, 'timestep': user_timestep}
+                            params, _, simulated = run_configured_model(
+                                model_name, calib_events[0]['precip'], calib_events[0]['evap'],
+                                calib_events[0]['flow'], spatial_data={'area': catchment_area},
+                                timestep=user_timestep, warmup_steps=warmup_steps,
+                                upstream_flow=calib_events[0].get('upstream'),
+                                enable_routing=enable_upstream_routing,
+                                manual_routing_params=manual_routing_params,
                             )
                             # Exclude warm-up period data for metrics
                             if warmup_steps > 0 and len(calib_events[0]['flow']) > warmup_steps:
@@ -1538,11 +1513,9 @@ if uploaded_files and len(uploaded_files) > 0:
                         total_models = len(RECOMMENDED_MODELS)
                         model_base = model_idx / total_models
                         
-                        manual_routing = None
-                        if enable_upstream_routing:
-                            manual_routing = {'k_routing': k_routing, 'x_routing': x_routing}
+                        manual_routing = manual_routing_params if enable_upstream_routing else None
                         
-                        result = calibrate_model_fast(
+                        result = run_configured_model(
                             model_name,
                             calib_events[0]['precip'],
                             calib_events[0]['evap'],
@@ -1641,8 +1614,8 @@ if uploaded_files and len(uploaded_files) > 0:
                         # 上游汇流叠加
                         upstream_arr = file_data.get('upstream')
                         if enable_upstream_routing and upstream_arr is not None and len(simulated) > 0:
-                            simulated = apply_upstream_routing(
-                                simulated, upstream_arr, k_routing, x_routing
+                            simulated = apply_configured_routing(
+                                simulated, upstream_arr, safe_params
                             )
                         # Apply warm-up period handling
                         if len(simulated) == 0:
@@ -1671,17 +1644,20 @@ if uploaded_files and len(uploaded_files) > 0:
                         # 如果失败，使用默认参数
                         try:
                             if model_name == 'XAJ Model':
+                                fallback_params = default_xaj_params.copy()
+                                if enable_upstream_routing:
+                                    fallback_params.update({key: safe_params[key] for key in ('k_routing', 'x_routing')})
                                 simulated = model.run(
                                     file_data['precip'],
                                     file_data['evap'],
-                                    default_xaj_params,
+                                    fallback_params,
                                     spatial_data
                                 )
                         # Apply upstream routing superposition
                                 upstream_arr = file_data.get('upstream')
                                 if enable_upstream_routing and upstream_arr is not None:
-                                    simulated = apply_upstream_routing(
-                                        simulated, upstream_arr, k_routing, x_routing
+                                    simulated = apply_configured_routing(
+                                        simulated, upstream_arr, safe_params
                                     )
                                 # 检查模拟结果是否有效（全0或长度为0）
                                 if len(simulated) == 0 or np.sum(np.abs(simulated)) == 0:
@@ -1697,7 +1673,7 @@ if uploaded_files and len(uploaded_files) > 0:
                                 if np.sum(np.abs(simulated)) == 0:
                                     file_simulation_results[model_name][file_name] = {
                                         "model_name": model_name,
-                                        "params": default_xaj_params,
+                                        "params": fallback_params,
                                         "nse": -999,
                                         "kge": -999,
                                         "rmse": -999,
@@ -1711,7 +1687,7 @@ if uploaded_files and len(uploaded_files) > 0:
                                 else:
                                     file_simulation_results[model_name][file_name] = {
                                         "model_name": model_name,
-                                        "params": default_xaj_params,
+                                        "params": fallback_params,
                                         "nse": calc_nse(obs_for_metric, sim_for_metric),
                                         "kge": calc_kge(obs_for_metric, sim_for_metric),
                                         "rmse": calc_rmse(obs_for_metric, sim_for_metric),
@@ -1818,7 +1794,7 @@ if uploaded_files and len(uploaded_files) > 0:
                                 sim = model.run(f['precip'], f['evap'], safe_params, spatial_data)
                                 if sim is not None and len(sim) > 0:
                                     if enable_upstream_routing and f.get('upstream') is not None:
-                                        sim = apply_upstream_routing(sim, f['upstream'], k_routing, x_routing)
+                                        sim = apply_configured_routing(sim, f['upstream'], safe_params)
                                     
                                     if warmup_steps > 0 and len(f['precip']) > warmup_steps:
                                         train_precip_events.append(f['precip'][warmup_steps:])
@@ -1869,8 +1845,8 @@ if uploaded_files and len(uploaded_files) > 0:
                                         continue
                                     
                                     if enable_upstream_routing and sf.get('upstream') is not None:
-                                        simulated = apply_upstream_routing(
-                                            simulated, sf['upstream'], k_routing, x_routing
+                                        simulated = apply_configured_routing(
+                                            simulated, sf['upstream'], safe_params
                                         )
                                     
                                     if warmup_steps > 0 and len(sf['flow']) > warmup_steps:
@@ -2266,11 +2242,9 @@ if uploaded_files and len(uploaded_files) > 0:
                         total_models = len(RECOMMENDED_MODELS)
                         model_base = model_idx / total_models
                         
-                        manual_routing = None
-                        if enable_upstream_routing:
-                            manual_routing = {'k_routing': k_routing, 'x_routing': x_routing}
+                        manual_routing = manual_routing_params if enable_upstream_routing else None
                         
-                        result = calibrate_model_fast(
+                        result = run_configured_model(
                             model_name,
                             calib_events[0]['precip'],
                             calib_events[0]['evap'],
@@ -2293,6 +2267,18 @@ if uploaded_files and len(uploaded_files) > 0:
                     progress_bar.progress((model_idx + 1) / len(RECOMMENDED_MODELS))
                     if result:
                         params, nse, simulated = result
+                        try:
+                            full_simulated = ModelRegistry.get_model(model_name).run(
+                                all_precip_arr, all_evap_arr,
+                                {key: value for key, value in params.items() if key not in ('k_routing', 'x_routing')},
+                                {'area': catchment_area, 'timestep': user_timestep},
+                                warmup_steps=warmup_steps,
+                            )
+                            if enable_upstream_routing:
+                                full_simulated = apply_configured_routing(full_simulated, all_upstream_arr, params)
+                        except Exception as exc:
+                            st.error(f"{model_name}: {exc}")
+                            continue
                         calibration_results[model_name] = {
                             "model_name": model_name,
                             "params": params,
@@ -2301,6 +2287,7 @@ if uploaded_files and len(uploaded_files) > 0:
                             "mae": calc_mae(calib_events[0]['flow'], simulated),
                             "pbias": calc_pbias(calib_events[0]['flow'], simulated),
                             "simulated": simulated,
+                            "simulated_full": full_simulated,
                             "calib_data": (calib_events[0]['precip'], calib_events[0]['evap'], calib_events[0]['flow']),
                         }
                         st.write(f"  ✅ {model_name}: Avg NSE = {nse:.4f}")
@@ -2339,11 +2326,9 @@ if uploaded_files and len(uploaded_files) > 0:
                         total_models = len(RECOMMENDED_MODELS)
                         model_base = model_idx / total_models
                         
-                        manual_routing = None
-                        if enable_upstream_routing:
-                            manual_routing = {'k_routing': k_routing, 'x_routing': x_routing}
+                        manual_routing = manual_routing_params if enable_upstream_routing else None
                         
-                        result = calibrate_model_fast(
+                        result = run_configured_model(
                             model_name,
                             calib_events[0]['precip'],
                             calib_events[0]['evap'],
@@ -2419,7 +2404,7 @@ if uploaded_files and len(uploaded_files) > 0:
             model_names = []
             nse_list = []
             for model_name, result in calibration_results.items():
-                simulated = result['simulated']
+                simulated = result.get('simulated_full', result['simulated'])
                 # Exclude warm-up period data
                 if warmup_steps > 0 and len(simulated) > warmup_steps:
                     simulated_plot = simulated[warmup_steps:]
@@ -2757,7 +2742,7 @@ if not uploaded_files:
     Supports upstream outflow Muskingum channel routing:
     - Enable "Upstream Outflow Routing" in the sidebar
     - Specify upstream outflow column name (data must be in the same file)
-    - Muskingum parameters (k, x) are calibrated together with hydrological model parameters
+    - Muskingum parameters (k, x) can be calibrated jointly or set to fixed values
     """)
     
     st.subheader("📊 Data Format Requirements")
