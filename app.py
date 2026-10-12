@@ -1,5 +1,5 @@
 """
-HydroTune-AI 流域水文模型智能率定系统
+HydroTune：大语言模型智能体水文平台
 Streamlit 主入口
 """
 import streamlit as st
@@ -48,7 +48,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # 页面配置
 # ============================================================
 st.set_page_config(
-    page_title="HydroTune-AI - 流域水文模型智能率定系统",
+    page_title="HydroTune：大语言模型智能体水文平台",
     page_icon="🌊",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -275,7 +275,7 @@ def show_models_page():
 # ============================================================
 # 标题区域
 # ============================================================
-st.title("HydroTune-AI - 流域水文模型智能率定系统")
+st.title("HydroTune：大语言模型智能体水文平台")
 st.caption("上传数据 → 智能清洗 → 多模型率定 → XGB误差校正 → 自动报告")
 
 st.markdown("""
@@ -1852,7 +1852,7 @@ if uploaded_files and len(uploaded_files) > 0:
                                         'corrected': corrected_plot,
                                         'flow': flow_plot,
                                         'nse': nse_after,
-                                        'kge': nse_after,
+                                        'kge': calc_kge(flow_plot, corrected_plot),
                                         'rmse': rmse_after,
                                         'pbias': pbias_after,
                                         'best_model': best_name,
@@ -2024,6 +2024,7 @@ if uploaded_files and len(uploaded_files) > 0:
                             "场次": "整场洪水",
                             "类型": event_type,
                             "模型": f"{xgb_model}-XGB",
+                            "base_model": xgb_model,
                             "NSE": xgb_nse,
                             "KGE": xgb_data['kge'],
                             "RMSE": xgb_rmse,
@@ -2159,7 +2160,8 @@ if uploaded_files and len(uploaded_files) > 0:
                     file_simulation_results,
                     call_minimax,
                     warmup_hours,
-                    xgb_results
+                    xgb_results,
+                    comparison_results=summary_data,
                 )
             st.markdown(multifile_report)
             render_copyable_report(multifile_report, key="multifile_ai_report_copyable")
@@ -2646,7 +2648,8 @@ if uploaded_files and len(uploaded_files) > 0:
                             calibration_results,
                             file_simulation_results,
                             call_minimax,
-                            warmup_hours
+                            warmup_hours,
+                            comparison_results=summary_data,
                         )
                     st.markdown(multifile_report)
                     render_copyable_report(multifile_report, key="single_mode_multifile_ai_report_copyable")

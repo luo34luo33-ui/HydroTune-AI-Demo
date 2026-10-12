@@ -1,4 +1,4 @@
-# HydroTune-AI 水文模型智能率定系统
+# HydroTune：大语言模型智能体水文平台
 
 水文模型智能率定系统，支持多模型集成、多场次洪水率定、数据预分析、参数优化与智能报告。
 
@@ -266,6 +266,12 @@ ModelRegistry.register(MyModel())
 本地回归检查：`python -m unittest test_cloud_plotting -v`。
 
 ### 常见问题
+
+最终智能分析报告统一比较 XAJ、HBV、Tank、BMA 与最优模型＋XGB，复用图表指标。
+率定和验证场次分别等权汇总；只有五类模型共同有效的验证场次参与统一比较。
+缺失结果不填零，LLM 不可用时仍输出指标表、共同验证比较及校正前后差值。
+BMA 使用本场观测指标确定权重，XGB 使用真实误差滞后信息，报告会说明其回顾性评估条件。
+比较报告回归检查：`python -m unittest test_model_comparison -v`。
 
 **Q: 配置了 MINIMAX_API_KEY，LLM 仍不可用？**
 A: 侧栏默认折叠的“MiniMax API 设置”支持输入密钥、选择中国/国际平台、指定模型和测试连接。

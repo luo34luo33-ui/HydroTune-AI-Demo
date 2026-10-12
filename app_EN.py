@@ -2044,6 +2044,7 @@ if uploaded_files and len(uploaded_files) > 0:
                             "Event": "Full Event",
                             "Type": event_type,
                             "Model": f"{xgb_model}-XGB",
+                            "base_model": xgb_model,
                             "NSE": xgb_nse,
                             "KGE": xgb_data['kge'],
                             "RMSE": xgb_rmse,
@@ -2180,7 +2181,8 @@ if uploaded_files and len(uploaded_files) > 0:
                     file_simulation_results,
                     call_minimax,
                     warmup_hours,
-                    xgb_results
+                    xgb_results,
+                    comparison_results=summary_data,
                 )
             render_copyable_report(multifile_report, key="multifile_ai_report_copyable")
             
@@ -2648,7 +2650,8 @@ if uploaded_files and len(uploaded_files) > 0:
                             calibration_results,
                             file_simulation_results,
                             call_minimax,
-                            warmup_hours
+                            warmup_hours,
+                            comparison_results=summary_data,
                         )
                     render_copyable_report(multifile_report, key="single_mode_multifile_ai_report_copyable")
                     
