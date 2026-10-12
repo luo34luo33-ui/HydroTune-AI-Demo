@@ -190,6 +190,49 @@ def test_stage_report_requests_analysis_first_and_summary_last(files,config):
     assert report.endswith('继续验证。')
 
 
+def test_report_counts_distinguish_48_inputs_from_42_successful_evaluations(files,config):
+    import json
+    prepared=analysis.preprocess(files,config)
+    source=prepared['events'][0]
+    prepared['events']=[{**source,'name':f'event{i}.csv'} for i in range(48)]
+    prepared['codes']=[prepared['codes'][0]]*48  # Same date IDs still represent 48 events.
+    config['mode']=analysis.UPLOAD_MODES[2]
+    names=[event['name'] for event in prepared['events']]
+    successful=names[:32]+names[38:]
+    rows=[{'模型':'Tank Model','文件':name,'类型':'率定' if name in names[:36] else '验证',
+           **dict.fromkeys(('NSE','KGE','RMSE','MAE','PBIAS'),1.)} for name in successful]
+    simulation=dict(configuration=config,calib_names=set(names[:36]),metrics=rows,parameters={},
+                    warnings=['六场模型模拟失败。'])
+    counts=analysis.report_counts(prepared,simulation)
+    assert counts['识别洪水场次']==counts['输入文件数']==48
+    assert counts['记录总数']==48*32
+    assert (counts['率定文件数'],counts['验证文件数'])==(36,12)
+    assert counts['各模型实际评价数量']==[{'模型':'Tank Model','成功生成指标的文件数':42,'率定文件数':32,'验证文件数':10}]
+    with patch.object(analysis,'call_minimax',return_value='## 小结\n完成。') as call:
+        analysis.generate_report(prepared,simulation)
+    prompt=call.call_args.args[0]
+    evidence=json.loads(prompt.rsplit('\n',1)[1])
+    assert evidence['程序统计数量']==counts
+    assert evidence['模型运行说明']==simulation['warnings']
+    assert '不得把某模型仅成功评价的数量写成全部实测洪水数量' in prompt
+    with patch.object(analysis,'call_minimax',return_value='## 小结\n完成。') as call:
+        analysis.generate_report(prepared,simulation,kind='预分析')
+    evidence=json.loads(call.call_args.args[0].rsplit('\n',1)[1])
+    assert '各模型实际评价数量' not in evidence['程序统计数量']
+    assert evidence['程序统计数量']['识别洪水场次']==48
+
+
+def test_continuous_report_counts_do_not_call_one_file_one_flood(files,config):
+    prepared=analysis.preprocess(files,config)
+    prepared['codes']*=3
+    simulation=analysis.simulate(prepared,config,imported_parameters())
+    counts=analysis.report_counts(prepared,simulation)
+    assert counts['输入文件数']==1 and counts['识别洪水场次']==len(prepared['codes'])
+    assert '不等于识别洪水场次' in counts['评价计数单位']
+    assert counts['验证文件数']==0
+    assert counts['各模型实际评价数量'][0]['成功生成指标的文件数']==1
+
+
 def test_sessions_isolated_and_stale_task_cannot_publish(files,config):
     app=create_app()
     with app.server.test_request_context('/'):

@@ -352,24 +352,52 @@ def summary(rows):
     return frame.groupby(['类型','模型'], dropna=False)[names].mean().reset_index().to_dict('records')
 
 
+def report_counts(prepared, simulation=None, posts=None):
+    """Count report scope from confirmed inputs and actual metric rows."""
+    counts = {'输入文件数': len(prepared['events']),
+              '记录总数': sum(len(event['flow']) for event in prepared['events']),
+              '识别洪水场次': len(prepared['codes'])}
+    if simulation is None:
+        counts['模型模拟状态'] = '未运行或当前结果已过期；无模型评价场次'
+        return counts
+    names = {event['name'] for event in prepared['events']}
+    multi = simulation['configuration']['mode'] == UPLOAD_MODES[2]
+    counts['评价计数单位'] = '洪水场次（每文件一场）' if multi else '文件完整序列（不等于识别洪水场次）'
+    counts['率定文件数'] = len(names & simulation['calib_names'])
+    counts['验证文件数'] = len(names - simulation['calib_names']) if multi else 0
+    rows = simulation['metrics'] + [row for post in (posts or {}).values() for row in post['metrics']]
+    counts['各模型实际评价数量'] = [
+        {'模型': model, '成功生成指标的文件数': len({r['文件'] for r in rows if r['模型'] == model}),
+         **{category+'文件数': len({r['文件'] for r in rows if r['模型'] == model and r['类型'] == category})
+            for category in ('率定', '验证')}}
+        for model in dict.fromkeys(row['模型'] for row in rows)]
+    return counts
+
+
 def generate_report(prepared, simulation=None, posts=None, settings=None, kind='综合', basin=None):
     import json
     from plotly.utils import PlotlyJSONEncoder
     evidence = {'数据概况': prepared['stats'], '洪水统计': prepared['semantic_events'],
                 '说明': prepared['warnings'], '阶段': kind}
+    active_simulation = simulation if kind != '预分析' else None
+    evidence['程序统计数量'] = report_counts(prepared, active_simulation, posts)
     evidence['流域概况'] = {k:v for k,v in basin.items() if k!='figure'} if basin else '未提供空间数据'
     if simulation and kind != '预分析':
         rows = list(simulation['metrics'])
         for post in (posts or {}).values():
             rows += post['metrics']
         evidence.update({'模型指标': summary(rows), '率定配置': simulation['configuration'],
-                         '参数': simulation['parameters']})
+                         '参数': simulation['parameters'], '模型运行说明': simulation['warnings']})
     evidence['后处理'] = {name: {'权重': p['weights'], '指标': summary(p['metrics']), '说明': p['warnings']} for name,p in (posts or {}).items()}
     evidence['评估条件'] = 'BMA 按本场观测 NSE 计算权重；多场 XGB 校正使用真实误差滞后，属于回顾性评估。未提供收敛轨迹或参数敏感性分析。'
     text = json.dumps(evidence, ensure_ascii=False, cls=PlotlyJSONEncoder)
     instructions = ('正文以分析结论为主，约 1200–1800 字；数据概况简要汇总，不逐行复述文件清单、'
                     '洪水统计或参数表。指标表仅列模型与率定/验证汇总，避免大量数据表耗尽输出篇幅。'
                     '必须完整覆盖本阶段已运行的分析内容，并以“## 小结”收尾。')
+    instructions += ('所有数量必须直接引用“程序统计数量”，不得从长列表重新计数或根据指标行数推算。'
+                     '明确区分输入文件总数、识别洪水场次、率定/验证文件数和各模型实际评价文件数。'
+                     '单文件连续序列的评价文件数不等于洪水场次；不得把某模型仅成功评价的数量写成全部实测洪水数量。'
+                     '不得将分类子集或去重后的日期编码数量替代总场次；部分模型失败须结合模型运行说明单独说明。')
     if kind == '阶段':
         instructions += ('直接从模型模拟表现开始，不要添加开场免责声明，也不要设置“报告范围与证据边界”'
                          '段落或章节；必要的评估条件在对应结论处简要注明。小结概括当前效果与下一步建议。')
