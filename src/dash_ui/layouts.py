@@ -88,7 +88,6 @@ def sidebar():
                 (model.__doc__ or model.model_type).strip().splitlines()[0].split(' - ')[0][:70]),
                 html.Small('支持小时与日尺度' if model.supports_hourly else '仅支持日尺度')],className='model-option'),'value':name} for name,model in models.items()],
                 value=list(models),persistence='hbv',persistence_type='session'),
-            html.P('HBV 是源于瑞典的概念性水文模型，通过土壤水分、蒸散发、径流生成和快慢水库响应模拟流域降雨径流过程，支持日尺度与小时尺度。',className='hint'),
         ],True),
         html.Div(id='config-note',className='hint',role='status'),
     ],className='sidebar',id='sidebar')
