@@ -268,7 +268,8 @@ def test_result_polling_only_publishes_changed_results(files,config):
         assert publish(2,0)==1
         output,key,_=show(1,'data','event0.csv',None,'all','NSE',None)
         from plotly.io.json import to_json_plotly
-        serialized=to_json_plotly(output)
+        import json
+        serialized=json.dumps(json.loads(to_json_plotly(output)),ensure_ascii=False)
         assert 'event47.csv' in serialized and '洪水语义画像' in serialized
         assert choose(1,'data','event0.csv')[1] is no_update
         # Status polling during/after slow result delivery never republishes it.
