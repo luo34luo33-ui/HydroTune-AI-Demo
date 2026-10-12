@@ -26,6 +26,17 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+### Dash 科研工作台（独立版本）
+
+```bash
+pip install -r requirements-dash.txt
+python dash_app.py
+```
+
+访问 http://127.0.0.1:8050/，从首页进入浅色科研工作台。支持文件暂存与确认、独立预分析、五种率定算法、模型选择、BMA、XGB、Markdown 智能报告和图表下载。首页封面暂留空。
+
+Streamlit 继续使用原入口和 `requirements.txt`。Dash 的运行方式、限制与验证记录见 [Dash 工作台说明](DASH_WORKBENCH.md)。
+
 ### 测试命令
 
 ```bash
