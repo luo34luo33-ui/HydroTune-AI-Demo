@@ -374,6 +374,48 @@ def test_pending_upload_does_not_invalidate_confirmed_results(config):
         assert state['stale_data']
 
 
+def test_preanalysis_report_survives_module_roundtrip(files,config):
+    app=create_app()
+    with app.server.test_request_context('/'):
+        state=tasks.current()
+        tasks.configure(state,config)
+        state.update(prepared=analysis.preprocess(files,config),confirmed_config=config,
+                     reports={'pre-report':'已生成的洪水预分析报告'})
+        show=next(v['callback'].__wrapped__ for k,v in app.callback_map.items() if 'module-view.children' in k)
+        show(state['revision'],'data',files[0][0],None,'all','NSE',None)
+        show(state['revision'],'simulation',None,None,'all','NSE',None)
+        view,_,_=show(state['revision'],'data',files[0][0],None,'all','NSE',None)
+        assert '已生成的洪水预分析报告' in str(view)
+        assert state['reports']['pre-report']=='已生成的洪水预分析报告'
+
+
+def test_reports_invalidate_only_when_their_dependencies_change(files,config):
+    app=create_app()
+    with app.server.test_request_context('/'):
+        state=tasks.current()
+        tasks.configure(state,config)
+        state.update(prepared=analysis.preprocess(files,config),confirmed_config=config,
+                     reports={'pre-report':'洪水报告','stage-report':'旧阶段报告','report':'旧综合报告'})
+        with patch.object(analysis,'simulate',return_value={'completed':True}):
+            tasks.submit(state,'simulate')
+            tasks.workers.submit(lambda:None).result(timeout=15)
+        assert state['reports']=={'pre-report':'洪水报告'}
+        for action in ('bma','xgb'):
+            state['reports'].update({'stage-report':'阶段报告','report':'综合报告'})
+            with patch.object(analysis,'postprocess',return_value={'completed':True}):
+                tasks.submit(state,action)
+                tasks.workers.submit(lambda:None).result(timeout=15)
+            assert state['reports']=={'pre-report':'洪水报告'}
+        state['reports']['report']='综合报告'
+        changed={**config,'xgb_depth':config['xgb_depth']+1}
+        tasks.configure(state,changed)
+        assert state['reports']=={'pre-report':'洪水报告'}
+        tasks.configure(state,{**changed,'max_iter':config['max_iter']+1})
+        assert state['reports']=={'pre-report':'洪水报告'}
+        tasks.configure(state,{**changed,'area':config['area']+1})
+        assert state['reports']=={}
+
+
 @pytest.mark.parametrize('module',['data','simulation','post','report'])
 def test_dash_routes_and_callback_navigation_do_not_start_jobs(module):
     app=create_app()

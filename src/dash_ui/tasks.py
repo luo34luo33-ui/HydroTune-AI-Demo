@@ -66,10 +66,10 @@ def configure(state, config):
             state['reports'] = {}
         elif any(previous[k] != config[k] for k in SIMULATION_KEYS):
             state['stale_simulation'] = state['simulation'] is not None
-            state['reports'] = {}
+            state['reports'] = {key:text for key,text in state['reports'].items() if key=='pre-report'}
         elif any(previous[k] != config[k] for k in POST_KEYS):
             state['posts'].pop('xgb', None)
-            state['reports'] = {}
+            state['reports'] = {key:text for key,text in state['reports'].items() if key=='pre-report'}
 
 
 def submit(state, action):
@@ -124,10 +124,13 @@ def run(state, snapshot, action, job_id, version):
                                                    for key,f in snapshot['pending'].items()])
         elif action == 'simulate':
             result = analysis.simulate(snapshot['prepared'], config, snapshot['confirmed_parameters'], progress)
-            update = dict(simulation=result, posts={}, reports={}, stale_simulation=False)
+            update = dict(simulation=result, posts={},
+                          reports={key:text for key,text in snapshot['reports'].items() if key=='pre-report'},
+                          stale_simulation=False)
         elif action in ('bma','xgb'):
             result = analysis.postprocess(snapshot['prepared'], snapshot['simulation'], config, action)
-            update = dict(posts={**snapshot['posts'], action:result}, reports={})
+            update = dict(posts={**snapshot['posts'], action:result},
+                          reports={key:text for key,text in snapshot['reports'].items() if key=='pre-report'})
         elif action == 'test-llm':
             with llm_settings(snapshot['llm']):
                 response = call_minimax('请只回复：连接成功。')
