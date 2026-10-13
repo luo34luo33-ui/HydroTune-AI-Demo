@@ -87,6 +87,7 @@
         if(p.open!==undefined)el.open=p.open;
         if(p.placeholder&&el.type!=='password')el.placeholder=p.placeholder;
         if(p.role)el.setAttribute('role',p.role);
+        if(type==='Img'&&p.src&&p.src.startsWith('data:image/')){el.src=p.src;el.alt=p.alt||'';}
         if(type==='Progress'){
             if(p.value!==null&&p.value!==undefined){el.value=p.value;el.max=p.max||100;}
             else {const frozen=document.createElement('div');frozen.id=el.id;frozen.style.cssText=el.style.cssText;frozen.className='snapshot-progress-unknown';

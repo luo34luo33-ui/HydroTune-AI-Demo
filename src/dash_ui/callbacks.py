@@ -1,5 +1,7 @@
 """User inputs and navigation; calculations live in services and background tasks."""
 import base64
+from io import BytesIO
+from PIL import Image, UnidentifiedImageError
 from copy import deepcopy
 from urllib.parse import parse_qs, urlencode
 from uuid import uuid4
@@ -22,6 +24,34 @@ def file_list(state):
 
 
 def register(app):
+    @app.callback(Output('basin-display-message','children'),
+                  Input('basin-display-upload','contents'),Input('remove-basin-display','n_clicks'),
+                  State('basin-display-upload','filename'),prevent_initial_call=True)
+    def supplementary_image(content, remove, name):
+        state=tasks.current()
+        if ctx.triggered_id=='remove-basin-display':
+            with tasks.lock:
+                state['basin_display']=None
+                state['revision']+=1
+            return '已移除流域概况展示图。'
+        if not content:
+            return no_update
+        try:
+            raw=base64.b64decode(content.split(',',1)[1],validate=True)
+            if not raw or len(raw)>12*1024*1024:
+                raise ValueError('展示图须非空且不超过 12 MB。')
+            with Image.open(BytesIO(raw)) as image:
+                mime={'PNG':'image/png','JPEG':'image/jpeg','WEBP':'image/webp'}.get(image.format)
+                if not mime or image.width*image.height>25_000_000:
+                    raise ValueError('请选择 PNG、JPG 或 WebP 图片，像素总量不超过 2500 万。')
+                image.verify()
+            with tasks.lock:
+                state['basin_display']=dict(name=name,size=len(raw),src='data:'+mime+';base64,'+base64.b64encode(raw).decode())
+                state['revision']+=1
+            return f'已展示：{name}'
+        except (ValueError,IndexError,OSError,UnidentifiedImageError,Image.DecompressionBombError):
+            return '图片读取失败，请选择有效的 PNG、JPG 或 WebP 图片（不超过 12 MB、2500 万像素）。'
+
     @app.callback(Output('semantic-detail','children'),Input('semantic-event','value'))
     def select_semantic_event(index):
         with tasks.lock:

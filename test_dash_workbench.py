@@ -46,6 +46,58 @@ def test_confirmation_only_computes_preanalysis(files,config):
     assert prepared['preanalysis_report']==''
 
 
+def test_preanalysis_excludes_each_file_warmup_and_keeps_full_chart(config):
+    from src.dash_ui.semantics import portrait
+    config.update(mode=analysis.UPLOAD_MODES[2],timestep='hourly',warmup_hours=3)
+    frame=pd.DataFrame(dict(date=pd.date_range('2026-01-01',periods=8,freq='h'),
+                            flow=[999,800,700,5,3,7,20,6],precip=[100,100,100,1,2,3,4,5]))
+    raw=frame.to_csv(index=False).encode()
+    prepared=analysis.preprocess([('a.csv',raw),('b.csv',raw)],config)
+    assert [b['start_idx'] for b in prepared['semantic_boundaries']]==[3,11]
+    assert [c.peak_flow for c in prepared['codes']]==[20,20]
+    assert [c.duration for c in prepared['codes']]==[5,5]
+    assert [c.total_precip for c in prepared['codes']]==[15,15]
+    assert len(prepared['charts'][0]['figure']['data'][0]['x'])==8
+    assert prepared['charts'][0]['figure']['layout']['shapes'][0]['fillcolor']=='#E5E7EB'
+    view=portrait(prepared,1)
+    assert '2026-01-01 03:00' in view['period']
+    markers=view['figure']['data'][-1]
+    assert list(markers['text'])==['起涨点','主峰点','终点']
+    assert pd.Timestamp(markers['x'][0])==pd.Timestamp('2026-01-01 04:00')
+    assert pd.Timestamp(markers['x'][1])==pd.Timestamp('2026-01-01 06:00')
+    assert any(s['fillcolor']=='#E5E7EB' for s in view['figure']['layout']['shapes'])
+    config['warmup_hours']=24
+    prepared=analysis.preprocess([('a.csv',raw)],config)
+    assert prepared['codes']==[] and prepared['semantic_boundaries']==[]
+    assert prepared['stats'][0]['记录数']==8
+
+
+def test_supplementary_basin_image_is_validated_and_exported(config):
+    import base64
+    from PIL import Image
+    from src.dash_ui.snapshot import build_snapshot,capture_state
+    from test_dash_snapshot import payload
+    app=create_app()
+    buffer=BytesIO()
+    Image.new('RGB',(20,20),'#08A6AD').save(buffer,format='PNG')
+    image='data:image/png;base64,'+base64.b64encode(buffer.getvalue()).decode()
+    upload=app.callback_map['basin-display-message.children']['callback'].__wrapped__
+    with app.server.test_request_context('/'):
+        state=tasks.current()
+        state['config']=config
+        with patch('src.dash_ui.callbacks.ctx') as context:
+            context.triggered_id='basin-display-upload'
+            assert '已展示' in upload(image,None,'basin.png')
+            assert state['prepared'] is None and state['job_id']==0
+            data=payload(build_snapshot(capture_state(state)))
+            assert image in str(data['views']['data'])
+            assert '补充展示图' in str(data)
+            assert '失败' in upload('data:image/png;base64,YmFk',None,'bad.png')
+            context.triggered_id='remove-basin-display'
+            upload(None,1,None)
+            assert state['basin_display'] is None
+
+
 def test_semantic_portraits_link_duplicate_event_dates_to_correct_files(files,config):
     from src.dash_ui.semantics import options, portrait, code_rows
     frame=pd.read_csv(BytesIO(files[0][1]))

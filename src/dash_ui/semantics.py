@@ -38,7 +38,8 @@ def options(prepared):
 def portrait(prepared, index):
     code = prepared['codes'][index]
     boundary = prepared['semantic_boundaries'][index]
-    start, end, peak = boundary['start_idx'], boundary['end_idx'], boundary['peak_idx']
+    analysis_start, end, peak = boundary['start_idx'], boundary['end_idx'], boundary['peak_idx']
+    start = boundary.get('display_start_idx',analysis_start)
     dates = pd.concat([event['dates'] for event in prepared['events']], ignore_index=True).iloc[start:end+1].reset_index(drop=True)
     flow = np.concatenate([event['flow'] for event in prepared['events']])[start:end+1]
     rain = np.concatenate([event['precip'] for event in prepared['events']])[start:end+1]
@@ -48,10 +49,21 @@ def portrait(prepared, index):
     dated = parsed.notna().all()
     x = list(parsed) if dated else list(range(len(flow)))
     peak -= start
-    figure.add_vrect(x0=x[0], x1=x[peak], fillcolor='#08A6AD', opacity=.09, line_width=0, layer='below')
+    usable=analysis_start-start
+    rise=usable+int(np.argmin(flow[usable:peak+1]))
+    figure.add_vrect(x0=x[usable], x1=x[peak], fillcolor='#08A6AD', opacity=.09, line_width=0, layer='below')
     figure.add_vrect(x0=x[peak], x1=x[-1], fillcolor='#092B4C', opacity=.05, line_width=0, layer='below')
+    cutoff=boundary.get('warmup_end_idx',start)-start
+    if cutoff>0 and prepared.get('warmup_hours',0):
+        if dated:
+            source_date=pd.to_datetime(pd.concat([e['dates'] for e in prepared['events']],ignore_index=True).iloc[boundary.get('source_start_idx',0)])
+            warmup_end=min(source_date+pd.Timedelta(hours=prepared['warmup_hours']),parsed.iloc[-1])
+        else:
+            warmup_end=min(cutoff,len(flow)-1)
+        figure.add_vrect(x0=x[0],x1=warmup_end,fillcolor='#E5E7EB',opacity=.65,line_width=0,layer='below',
+                         annotation_text='预热期',annotation_position='top left',annotation_font_color='#64748B')
     markers = {}
-    for position, label in [(0, '起点'), (peak, '主峰'), (len(flow)-1, '终点')]:
+    for position, label in [(rise, '起涨点'), (peak, '主峰点'), (len(flow)-1, '终点')]:
         markers.setdefault(position, []).append(label)
     figure.add_scatter(x=[x[p] for p in markers], y=[flow[p] for p in markers],
                        mode='markers+text', text=[' / '.join(v) for v in markers.values()],
@@ -66,7 +78,7 @@ def portrait(prepared, index):
     unit = '小时' if prepared['timestep'] == 'hourly' else '天'
     metrics = [('洪峰', f'{code.peak_flow:,.2f}', 'm³/s'), ('洪量', f'{code.flood_volume:,.2f}', '万m³'),
                ('历时', str(code.duration), unit), ('累计降雨', f'{code.total_precip:,.2f}', 'mm')]
-    period = f'{parsed.iloc[0]:%Y-%m-%d %H:%M} — {parsed.iloc[-1]:%Y-%m-%d %H:%M}' if dated else '按记录序号展示；编码日期为参考时间，不代表真实日期。'
+    period = f'{parsed.iloc[usable]:%Y-%m-%d %H:%M} — {parsed.iloc[-1]:%Y-%m-%d %H:%M}' if dated else '按记录序号展示；编码日期为参考时间，不代表真实日期。'
     sentence = f"本场洪水呈{tags[1]}、{tags[2]}特征，峰型为{tags[3]}，相对量级{TRANSLATIONS['magnitude'][code.magnitude]}。"
     return dict(figure=figure.to_plotly_json(), tags=tags, metrics=metrics, period=period,
                 sentence=sentence, source=boundary.get('file_name', prepared['events'][0]['name']))

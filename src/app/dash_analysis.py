@@ -110,6 +110,27 @@ def _chart(event, simulations, title, warmup):
     return fig.to_plotly_json()
 
 
+def preanalysis_warmup(event, hours, timestep):
+    """First usable record after the user-specified elapsed warm-up interval."""
+    dates=pd.to_datetime(event['dates'],errors='coerce')
+    if dates.notna().all():
+        cutoff=dates.iloc[0]+pd.Timedelta(hours=hours)
+        return int((dates<cutoff).sum())
+    return min(len(event['flow']),int(np.ceil(hours/(1 if timestep=='hourly' else 24))))
+
+
+def shade_warmup(figure, event, hours, timestep):
+    if not hours:
+        return figure
+    dates=pd.to_datetime(event['dates'],errors='coerce')
+    dated=dates.notna().all()
+    start=dates.iloc[0] if dated else 0
+    end=min(start+pd.Timedelta(hours=hours),dates.iloc[-1]) if dated else min(hours/(1 if timestep=='hourly' else 24),len(event['flow'])-1)
+    figure.add_vrect(x0=start,x1=end,fillcolor='#E5E7EB',opacity=.65,line_width=0,layer='below',
+                     annotation_text='预热期',annotation_position='top left',annotation_font_color='#64748B')
+    return figure
+
+
 def preprocess(files, config):
     """Parse confirmed user inputs and compute statistics without calling an LLM."""
     mode = config['mode']
@@ -144,11 +165,30 @@ def preprocess(files, config):
     analyzer = SemanticPreAnalyzer(area=area, timestep=timestep)
     if mode == UPLOAD_MODES[1]:
         boundaries = analyzer.detect_flood_events(all_flow, pd.Series(parsed_dates), all_precip)
-    preanalysis = analyzer.analyze(
-        all_flow, all_precip, pd.Series(parsed_dates), None,
-        multi_file_mode=mode == UPLOAD_MODES[2], event_boundaries=boundaries)
-    codes = preanalysis['semantic_codes']
-    quality = preanalysis['quality']
+    candidates=boundaries if boundaries is not None else analyzer.detect_flood_events(all_flow,pd.Series(parsed_dates),all_precip)
+    if not candidates:
+        candidates=[dict(start_idx=0,end_idx=len(all_flow)-1)]
+    hours=int(config.get('warmup_hours') or 0)
+    sources=[]
+    offset=0
+    for event in events:
+        cutoff=offset+preanalysis_warmup(event,hours,timestep)
+        sources.append((offset,offset+len(event['flow']),cutoff,event))
+        offset+=len(event['flow'])
+    semantic_boundaries=[]
+    for boundary in candidates:
+        first,last=boundary['start_idx'],boundary['end_idx']
+        offset,_,cutoff,event=next(source for source in sources if source[0]<=first<source[1])
+        first=max(first,cutoff)
+        if first>last:
+            continue
+        peak=first+int(np.argmax(all_flow[first:last+1]))
+        semantic_boundaries.append(dict(boundary,start_idx=first,end_idx=last,peak_idx=peak,
+            peak_flow=float(all_flow[peak]),display_start_idx=boundary['start_idx'],warmup_end_idx=cutoff,
+            source_start_idx=offset,file_name=event['name']))
+    # Quality covers every original record; semantic coding covers only the analysis interval.
+    codes=analyzer.generate_semantic_codes(all_flow,all_precip,pd.Series(parsed_dates),semantic_boundaries) if semantic_boundaries else []
+    quality=analyzer.evaluate_quality(all_precip,all_flow,pd.Series(parsed_dates))
     raw_count = sum(len(e['flow']) * 2 for e in events)
     raw_missing = sum(e['missing']['flow'] + e['missing']['precip'] for e in events)
     quality.completeness = 100 * (raw_count - raw_missing) / raw_count
@@ -168,11 +208,11 @@ def preprocess(files, config):
                       '最小流量 (m³/s)': float(event['flow'].min()),
                       '平均流量 (m³/s)': float(event['flow'].mean())})
     return {'events': events, 'boundaries': boundaries, 'quality': quality_data,
-            'semantic_boundaries': preanalysis['event_boundaries'], 'timestep': timestep,
+            'semantic_boundaries': semantic_boundaries, 'timestep': timestep, 'warmup_hours': hours,
             'stats': stats, 'codes': codes, 'quality_object': quality,
             'semantic_events': [{'场次': c.event_id, '峰值 (m³/s)': float(c.peak_flow),
                                   '洪量 (万m³)': float(c.flood_volume), '峰型': c.peak_shape} for c in codes],
-            'preanalysis_report': '', 'charts': [{'title': e['name'], 'figure': _chart(e, {}, e['name'], 0)} for e in events],
+            'preanalysis_report': '', 'charts': [{'title': e['name'], 'figure': shade_warmup(go.Figure(_chart(e, {}, e['name'], 0)),e,hours,timestep).to_plotly_json()} for e in events],
             'warnings': ['缺失数值沿用原计算流程填零；流量统计基于处理后序列。原始缺测数量见数据表。'
                          + (' 时间缺失时语义编码沿用原分析器的等步长参考时间，不代表真实日期。' if any(pd.to_datetime(e['dates'], errors='coerce').isna().any() for e in events) else '')]}
 
@@ -381,6 +421,8 @@ def generate_report(prepared, simulation=None, posts=None, settings=None, kind='
                 '说明': prepared['warnings'], '阶段': kind}
     active_simulation = simulation if kind != '预分析' else None
     evidence['程序统计数量'] = report_counts(prepared, active_simulation, posts)
+    evidence['预热期小时']=prepared.get('warmup_hours',0)
+    evidence['洪水统计范围']='各输入文件的预热期之后；原始数据概况与质量统计仍覆盖全部记录。'
     evidence['流域概况'] = {k:v for k,v in basin.items() if k!='figure'} if basin else '未提供空间数据'
     if simulation and kind != '预分析':
         rows = list(simulation['metrics'])
@@ -401,8 +443,15 @@ def generate_report(prepared, simulation=None, posts=None, settings=None, kind='
     if kind == '阶段':
         instructions += ('直接从模型模拟表现开始，不要添加开场免责声明，也不要设置“报告范围与证据边界”'
                          '段落或章节；必要的评估条件在对应结论处简要注明。小结概括当前效果与下一步建议。')
+    if kind == '预分析':
+        instructions += ('减少防御性表达，直接说明结果揭示的水文特征及其对建模的意义。'
+                         '少解释或不解释自己不做什么，不反复列举未运行步骤，不以免责声明开篇。'
+                         '围绕洪水量级、峰型、涨退水、降雨响应、数据质量与流域特征组织结论，'
+                         '每个关键判断尽量给出对应数值或统计现象；必要的评估条件在结论处一句话交代。'
+                         '预热期不计入洪水过程范围，明确区分全量记录统计与预热后洪水统计。')
+    scope='根据本阶段已有证据分析，不编造指标或结论。' if kind=='预分析' else '标明未运行步骤和缺少证据的项目；不得编造指标、排名、收敛轨迹或敏感性结论。'
     with llm_settings(settings):
-        report = call_minimax('请根据以下真实计算证据生成'+kind+' Markdown 分析报告。标明未运行步骤和缺少证据的项目；不得编造指标、排名、收敛轨迹或敏感性结论。'+instructions+'\n'+text,
+        report = call_minimax('请根据以下真实计算证据生成'+kind+' Markdown 分析报告。'+scope+instructions+'\n'+text,
                               max_output_tokens=8192,continuations=2)
     if report.startswith('[ERROR]'):
         return '### 智能分析暂不可用\n\n'+report+'\n\n确定性统计结果仍可在工作台查看。'

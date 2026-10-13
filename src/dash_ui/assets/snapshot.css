@@ -19,3 +19,4 @@
 .snapshot-workbench progress{animation:none}
 .snapshot-workbench .snapshot-progress-unknown{width:180px;height:4px;border-radius:4px;background:repeating-linear-gradient(120deg,#d9ecec 0,#d9ecec 8px,#75b8ba 8px,#75b8ba 14px)}
 .snapshot-workbench .table-scroll:empty{display:none}
+.basin-visual .snapshot-chart{height:100%;min-height:0}

@@ -83,6 +83,12 @@ def sidebar():
             html.Button('确认并分析',id='confirm',className='primary full'),
             html.P('支持仅上传空间文件展示流域概况；模型率定和智能报告单独启动。',className='hint'),
         ],True),
+        group('补充资料上传', [
+            dcc.Upload(id='basin-display-upload',children=html.Div([html.Strong('流域概况展示图'),html.Small('PNG / JPG / WebP · 可包含水系与雨量站点')]),
+                       accept='image/png,image/jpeg,image/webp',className='upload-box'),
+            html.Button('移除展示图',id='remove-basin-display',className='secondary'),
+            html.Div(id='basin-display-message',className='hint',role='status'),
+        ]),
         group('率定算法', [
             field('优化方法',dropdown('algorithm',list(ALGORITHMS),'两阶段算法(推荐)')),
             field('最大迭代配置',number('max_iter',10,5,200)),

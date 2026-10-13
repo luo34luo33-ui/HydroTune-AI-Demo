@@ -19,7 +19,7 @@ FIELDS = ['mode', 'area', 'timestep', 'warmup_hours', 'parameter_mode', 'algorit
 FIELDS += ['col-' + name for name in ('date', 'precip', 'evap', 'flow', 'upstream')]
 PARAM_IDS = [f'algo-{i}-{name}' for i, fields in enumerate(ALGORITHMS.values()) for name, *_ in fields]
 CONFIG_IDS = FIELDS + PARAM_IDS
-DATA_KEYS = ('mode', 'area', 'timestep', 'mapping', 'routing')
+DATA_KEYS = ('mode', 'area', 'timestep', 'mapping', 'routing', 'warmup_hours')
 SIMULATION_KEYS = ('warmup_hours', 'parameter_mode', 'algorithm', 'max_iter', 'models',
                    'algo_params', 'routing_fixed', 'routing_parameters')
 POST_KEYS = ('xgb_depth', 'xgb_rate', 'xgb_estimators', 'xgb_seed', 'xgb_quantile', 'xgb_ratio', 'xgb_clip')

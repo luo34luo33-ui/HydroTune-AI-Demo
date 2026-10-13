@@ -29,6 +29,7 @@ def capture_state(state):
     result=deepcopy({k:state[k] for k in ('prepared','simulation','posts','reports','basin',
                     'stale_data','stale_simulation','space_error','semantic_selection')})
     result.update({k:state.get(k) for k in ('phase','progress','busy','config_error')})
+    result['basin_display']=deepcopy(state.get('basin_display'))
     result['confirmed_config']=scientific_config(state.get('confirmed_config'))
     result['config']=scientific_config(state.get('config'))
     result['llm_public']={k:state.get('llm',{}).get(k) for k in ('provider','region','model')}
@@ -38,6 +39,9 @@ def capture_state(state):
     result['file_metadata'] += [dict(name=f['name'],kind=f['kind'],size=f['size'],status='结果来源（已从暂存区移除）')
                                for f in state.get('confirmed_file_metadata',[]) if f['key'] not in state.get('pending',{})]
     existing={f['name'] for f in result['file_metadata']}
+    if state.get('basin_display'):
+        image=state['basin_display']
+        result['file_metadata'].append(dict(name=image['name'],kind='补充展示图',size=image['size'],status='已展示'))
     if state['prepared']:
         result['file_metadata'] += [dict(name=e['name'],kind='hydro',size=None,status='结果来源')
                                    for e in state['prepared']['events'] if e['name'] not in existing]

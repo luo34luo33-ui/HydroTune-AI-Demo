@@ -87,13 +87,37 @@ def filtered_figure(state, module, choice, series, phase, metric='NSE'):
 
 
 def basin_card(state):
-    if state['basin']:
-        basin = state['basin']
-        labels = {'area_km2':'流域面积 (km²)','min_m':'最低高程 (m)',
-                  'max_m':'最高高程 (m)','mean_m':'平均高程 (m)','crs':'坐标系'}
-        return card('流域概况',table([{labels.get(k,k):v for k,v in basin.items() if k!='figure'}]),
-                    dcc.Graph(id='basin-chart',figure=basin['figure'],config={'responsive':True,'displaylogo':False}))
-    return empty('流域概况',state['space_error'] or '尚未确认流域空间数据。可上传 SHP ZIP，DEM 为可选项。')
+    basin, image = state['basin'], state.get('basin_display')
+    config=state.get('confirmed_config') or state.get('config') or {}
+    prepared=state['prepared']
+    facts=[]
+    if basin:
+        labels={'area_km2':'边界计算面积','min_m':'最低高程','max_m':'最高高程','mean_m':'平均高程','crs':'坐标系'}
+        for key,label in labels.items():
+            if key in basin:
+                value=basin[key]
+                unit=' km²' if key=='area_km2' else ' m' if key.endswith('_m') else ''
+                facts.append((label,f'{value:,.2f}'+unit if isinstance(value,(int,float)) else str(value)))
+    if 'area' in config:
+        facts.append(('建模流域面积',f"{config['area']:,.2f} km²"))
+    if prepared:
+        facts.extend([('时间尺度','小时尺度' if prepared['timestep']=='hourly' else '日尺度'),
+                      ('洪水场次',f"{len(prepared['codes'])} 场"),
+                      ('预热期',f"{prepared.get('warmup_hours',0)} 小时")])
+    if image:
+        visual=html.Figure([html.Img(src=image['src'],alt='流域概况补充展示图'),
+                            html.Figcaption('补充展示图 · '+image['name'])],className='basin-visual')
+    elif basin:
+        figure=go.Figure(basin['figure'])
+        figure.update_layout(autosize=True,height=None,margin=dict(l=45,r=35,t=35,b=45))
+        visual=html.Div(dcc.Graph(id='basin-chart',figure=figure,style={'height':'100%','width':'100%'},
+                       config={'responsive':True,'displaylogo':False}),className='basin-visual')
+    else:
+        visual=html.Div([html.Span('BASIN OVERVIEW',className='eyebrow'),html.H3('流域空间概况'),
+                        html.P(state['space_error'] or '上传流域边界与 DEM，或在“补充资料上传”中选择包含水系、雨量站点的流域展示图。')],className='basin-visual basin-placeholder')
+    return card('流域概况',html.Div([visual,html.Aside([html.Span('流域基本情况',className='eyebrow'),
+                html.Dl([html.Div([html.Dt(label),html.Dd(value)],className='basin-fact') for label,value in facts]),
+                html.P('确认空间或水文数据后展示基本情况。',className='hint') if not facts else None],className='basin-facts')],className='basin-overview'))
 
 
 def semantic_detail(prepared, index):
@@ -102,8 +126,7 @@ def semantic_detail(prepared, index):
             html.Div([html.Span(tag,className='semantic-tag') for tag in view['tags']],className='semantic-tags'),
             html.Div([kpi(label,value,unit) for label,value,unit in view['metrics']],className='kpi-grid'),
             html.P(view['sentence'],className='notice'),
-            dcc.Graph(id='semantic-chart',figure=view['figure'],config={'responsive':True,'displaylogo':False}),
-            html.P('浅青区域：起点至主峰；浅蓝区域：主峰至终点。多峰场次以主峰划分，仅作过程定位。',className='hint')]
+            dcc.Graph(id='semantic-chart',figure=view['figure'],config={'responsive':True,'displaylogo':False})]
 
 
 def semantic_card(state):
@@ -114,17 +137,17 @@ def semantic_card(state):
     return card('洪水语义画像',html.P('选择一场洪水，查看已有编码与对应过程。',className='hint'),
                 dcc.Dropdown(id='semantic-event',options=options(prepared),value=index,clearable=False),
                 html.Div(semantic_detail(prepared,index),id='semantic-detail'),
-                html.P(NOTE,className='hint'),
                 html.Details([html.Summary('完整语义编码表'),table(code_rows(prepared)),
+                              html.P(NOTE,className='hint'),
                               html.P('代表性评分为现有规则评分，不表示概率或模型置信度。',className='hint')]))
 
 
 def render(state,module,choice,series,phase,metric):
     prepared,simulation = state['prepared'],state['simulation']
     if prepared is None:
-        if module == 'data' and (state['basin'] or state['space_error']):
-            return [html.Div('数据配置已变化，请重新确认并分析。' if state['stale_data'] else
-                             '当前仅展示空间数据；水文统计与模型模拟需另行上传水文时序。',className='notice'),basin_card(state)]
+        if module == 'data':
+            return [basin_card(state),html.Div('数据配置已变化，请重新确认并分析。' if state['stale_data'] else
+                             '上传水文时序并确认后，可查看水文统计与洪水语义画像。',className='notice')]
         return empty('从一份数据开始','在左侧选择水文或流域空间文件，然后点击“确认并分析”。')
     notices = []
     if state['stale_data']:
@@ -134,13 +157,12 @@ def render(state,module,choice,series,phase,metric):
     if module=='data':
         count = sum(len(e['flow']) for e in prepared['events'])
         missing = sum(e['missing']['flow'] for e in prepared['events'])
-        content = [html.Div([kpi('水文文件',len(prepared['events']),'个'),kpi('数据记录',count,'条'),
+        content = [basin_card(state),html.Div([kpi('水文文件',len(prepared['events']),'个'),kpi('数据记录',count,'条'),
                              kpi('原始流量有效率',f'{100*(count-missing)/count:.1f}','%'),kpi('识别洪水',len(prepared['codes']),'场')],className='kpi-grid'),
-                   card('基础数据概况',table(prepared['stats']),*[html.P(w,className='hint') for w in prepared['warnings']]),
-                   card('洪水统计',table(prepared['semantic_events'])),
+                   folding_card('基础数据概况',table(prepared['stats']),*[html.P(w,className='hint') for w in prepared['warnings']]),
+                   folding_card('洪水统计',table(prepared['semantic_events'])),
                    semantic_card(state),
                    card('智能预分析报告',markdown(state['reports'].get('pre-report')))]
-        content.append(basin_card(state))
     elif module=='simulation':
         if simulation is None:
             return notices+[empty('准备运行水文模型','确认左侧模型、算法与参数，然后点击“启动模型运行”。')]
@@ -174,7 +196,7 @@ def render(state,module,choice,series,phase,metric):
         return notices+[card('综合智能分析报告',markdown(state['reports'].get('report')))]
     figure=filtered_figure(state,module,choice,series,phase,metric)
     if figure is not None:
-        content.insert(1,card('模型性能比较' if choice=='模型性能比较' else '水文过程',dcc.Graph(id='selected-chart',figure=figure,config={'responsive':True,'displaylogo':False})))
+        content.insert(2 if module=='data' else 1,card('模型性能比较' if choice=='模型性能比较' else '水文过程',dcc.Graph(id='selected-chart',figure=figure,config={'responsive':True,'displaylogo':False})))
     elif module!='report':
         content.append(html.P('当前筛选条件下没有过程图。',className='hint'))
     return notices+content

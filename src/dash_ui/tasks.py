@@ -33,7 +33,7 @@ def current():
         state = sessions.setdefault(sid, {
             'touched': now, 'pending': {}, 'confirmed_files': [], 'confirmed_file_metadata': [], 'parameters': {}, 'confirmed_parameters': {},
             'config': None, 'config_error': '', 'confirmed_config': None, 'llm': {},
-            'prepared': None, 'simulation': None, 'posts': {}, 'reports': {}, 'basin': None, 'semantic_selection': 0,
+            'prepared': None, 'simulation': None, 'posts': {}, 'reports': {}, 'basin': None, 'basin_display': None, 'semantic_selection': 0,
             'revision': 0, 'input_version': 0, 'job_id': 0, 'busy': False,
             'phase': '等待确认数据', 'progress': None, 'stale_data': False, 'stale_simulation': False,
             'space_error': '', 'llm_status': '使用服务器配置'})
