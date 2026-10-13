@@ -244,6 +244,25 @@ def test_stage_report_requests_analysis_first_and_summary_last(files,config):
     assert report.endswith('继续验证。')
 
 
+def test_preanalysis_report_has_only_flood_evidence_even_after_simulation(files,config):
+    import json
+    prepared=analysis.preprocess(files,config)
+    with patch.object(analysis,'call_minimax',return_value='## 小结\n洪水特征。') as call:
+        analysis.generate_report(prepared,kind='预分析')
+        before=call.call_args.args[0]
+        # Later-stage inputs are deliberately unusable: preanalysis must never read them.
+        analysis.generate_report(prepared,simulation=object(),posts=object(),kind='预分析')
+        after=call.call_args.args[0]
+    assert before==after
+    evidence=json.loads(after.rsplit('\n',1)[1])
+    assert not any(word in json.dumps(evidence,ensure_ascii=False) for word in
+                   ('模型','模拟状态','率定','验证','BMA','XGB','后处理','评估条件'))
+    assert evidence['洪水语义特征'][0]['peak_flow']==prepared['codes'][0].peak_flow
+    assert evidence['数据质量']==prepared['quality']
+    assert '不涉及任何水文模型' in after and '重点说清楚数据呈现了什么特征' in after
+    assert call.call_args.kwargs==dict(max_output_tokens=8192,continuations=2)
+
+
 def test_report_counts_distinguish_48_inputs_from_42_successful_evaluations(files,config):
     import json
     prepared=analysis.preprocess(files,config)

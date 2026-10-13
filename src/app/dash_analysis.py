@@ -414,44 +414,77 @@ def report_counts(prepared, simulation=None, posts=None):
     return counts
 
 
+def flood_preanalysis_prompt(prepared, basin=None):
+    """Flood-only evidence and instructions, independent of later workflow stages."""
+    import json
+    from plotly.utils import PlotlyJSONEncoder
+    evidence={
+        '数据概况':prepared['stats'], '数据质量':prepared['quality'],
+        '程序统计数量':{'输入文件数':len(prepared['events']),
+                        '记录总数':sum(len(event['flow']) for event in prepared['events']),
+                        '识别洪水场次':len(prepared['codes'])},
+        '洪水统计':prepared['semantic_events'],
+        '洪水语义特征':[{'序号':i+1,**code.to_dict()} for i,code in enumerate(prepared['codes'])],
+        '语义指标单位':{'peak_flow':'m³/s','flood_volume':'万m³','total_precip':'mm',
+                       'duration':'小时' if prepared['timestep']=='hourly' else '天'},
+        '洪量口径':'扣除估计基流后的径流量',
+        '时间尺度':prepared['timestep'], '预热期小时':prepared.get('warmup_hours',0),
+        '洪水统计范围':'各输入文件的预热期之后；数据概况与质量统计覆盖全部记录。',
+        '数据处理说明':prepared['warnings'],
+        '流域概况':{k:v for k,v in basin.items() if k!='figure'} if basin else '未提供空间数据',
+    }
+    instructions=(
+        '请根据以下上传洪水资料生成数据预分析 Markdown 报告，约 1200–1800 字。'
+        '报告主题仅限实测洪水信息：数据覆盖与质量、洪峰和洪量分布、历时、峰型、涨退水特征、'
+        '累计降雨和降雨径流响应、场次差异及已有流域背景。'
+        '不涉及任何水文模型、模拟状态、率定、验证、模型性能、参数优化、BMA 或 XGB；'
+        '也不要设置这些主题的章节，或以“尚未运行模型”等句子说明其缺席。'
+        '直接从洪水分析结论开始，减少防御性表达，少解释或不解释自己不做什么，'
+        '重点说清楚数据呈现了什么特征、场次之间有何差异、结果具有怎样的水文意义。'
+        '关键判断引用已有数值或统计现象，不编造因果关系、重现期或没有计算的指标。'
+        '数量直接引用“程序统计数量”，区分文件数和洪水场次，不按日期编码去重或从长列表重新计数。'
+        '预热期不计入洪水统计，区分全量记录质量与预热后过程特征。'
+        '语义量级是样本内相对分类；降雨响应标签结合实际证据解读。'
+        '缺少的洪水特征不补造，必要的数据限制仅在相关结论处简要交代。'
+        '数据概况简要汇总，不逐行复述文件清单或语义编码表，最后以“## 小结”概括本批洪水的主要特征。')
+    return instructions+'\n'+json.dumps(evidence,ensure_ascii=False,cls=PlotlyJSONEncoder)
+
+
 def generate_report(prepared, simulation=None, posts=None, settings=None, kind='综合', basin=None):
     import json
     from plotly.utils import PlotlyJSONEncoder
-    evidence = {'数据概况': prepared['stats'], '洪水统计': prepared['semantic_events'],
-                '说明': prepared['warnings'], '阶段': kind}
-    active_simulation = simulation if kind != '预分析' else None
-    evidence['程序统计数量'] = report_counts(prepared, active_simulation, posts)
-    evidence['预热期小时']=prepared.get('warmup_hours',0)
-    evidence['洪水统计范围']='各输入文件的预热期之后；原始数据概况与质量统计仍覆盖全部记录。'
-    evidence['流域概况'] = {k:v for k,v in basin.items() if k!='figure'} if basin else '未提供空间数据'
-    if simulation and kind != '预分析':
-        rows = list(simulation['metrics'])
-        for post in (posts or {}).values():
-            rows += post['metrics']
-        evidence.update({'模型指标': summary(rows), '率定配置': simulation['configuration'],
-                         '参数': simulation['parameters'], '模型运行说明': simulation['warnings']})
-    evidence['后处理'] = {name: {'权重': p['weights'], '指标': summary(p['metrics']), '说明': p['warnings']} for name,p in (posts or {}).items()}
-    evidence['评估条件'] = 'BMA 按本场观测 NSE 计算权重；多场 XGB 校正使用真实误差滞后，属于回顾性评估。未提供收敛轨迹或参数敏感性分析。'
-    text = json.dumps(evidence, ensure_ascii=False, cls=PlotlyJSONEncoder)
-    instructions = ('正文以分析结论为主，约 1200–1800 字；数据概况简要汇总，不逐行复述文件清单、'
-                    '洪水统计或参数表。指标表仅列模型与率定/验证汇总，避免大量数据表耗尽输出篇幅。'
-                    '必须完整覆盖本阶段已运行的分析内容，并以“## 小结”收尾。')
-    instructions += ('所有数量必须直接引用“程序统计数量”，不得从长列表重新计数或根据指标行数推算。'
-                     '明确区分输入文件总数、识别洪水场次、率定/验证文件数和各模型实际评价文件数。'
-                     '单文件连续序列的评价文件数不等于洪水场次；不得把某模型仅成功评价的数量写成全部实测洪水数量。'
-                     '不得将分类子集或去重后的日期编码数量替代总场次；部分模型失败须结合模型运行说明单独说明。')
-    if kind == '阶段':
-        instructions += ('直接从模型模拟表现开始，不要添加开场免责声明，也不要设置“报告范围与证据边界”'
-                         '段落或章节；必要的评估条件在对应结论处简要注明。小结概括当前效果与下一步建议。')
-    if kind == '预分析':
-        instructions += ('减少防御性表达，直接说明结果揭示的水文特征及其对建模的意义。'
-                         '少解释或不解释自己不做什么，不反复列举未运行步骤，不以免责声明开篇。'
-                         '围绕洪水量级、峰型、涨退水、降雨响应、数据质量与流域特征组织结论，'
-                         '每个关键判断尽量给出对应数值或统计现象；必要的评估条件在结论处一句话交代。'
-                         '预热期不计入洪水过程范围，明确区分全量记录统计与预热后洪水统计。')
-    scope='根据本阶段已有证据分析，不编造指标或结论。' if kind=='预分析' else '标明未运行步骤和缺少证据的项目；不得编造指标、排名、收敛轨迹或敏感性结论。'
+    if kind=='预分析':
+        prompt=flood_preanalysis_prompt(prepared,basin)
+    else:
+        evidence = {'数据概况': prepared['stats'], '洪水统计': prepared['semantic_events'],
+                    '说明': prepared['warnings'], '阶段': kind}
+        evidence['程序统计数量'] = report_counts(prepared, simulation, posts)
+        evidence['预热期小时']=prepared.get('warmup_hours',0)
+        evidence['洪水统计范围']='各输入文件的预热期之后；原始数据概况与质量统计仍覆盖全部记录。'
+        evidence['流域概况'] = {k:v for k,v in basin.items() if k!='figure'} if basin else '未提供空间数据'
+        if simulation:
+            rows = list(simulation['metrics'])
+            for post in (posts or {}).values():
+                rows += post['metrics']
+            evidence.update({'模型指标': summary(rows), '率定配置': simulation['configuration'],
+                             '参数': simulation['parameters'], '模型运行说明': simulation['warnings']})
+        evidence['后处理'] = {name: {'权重': p['weights'], '指标': summary(p['metrics']), '说明': p['warnings']} for name,p in (posts or {}).items()}
+        evidence['评估条件'] = 'BMA 按本场观测 NSE 计算权重；多场 XGB 校正使用真实误差滞后，属于回顾性评估。未提供收敛轨迹或参数敏感性分析。'
+        text = json.dumps(evidence, ensure_ascii=False, cls=PlotlyJSONEncoder)
+        instructions = ('正文以分析结论为主，约 1200–1800 字；数据概况简要汇总，不逐行复述文件清单、'
+                        '洪水统计或参数表。指标表仅列模型与率定/验证汇总，避免大量数据表耗尽输出篇幅。'
+                        '必须完整覆盖本阶段已运行的分析内容，并以“## 小结”收尾。')
+        instructions += ('所有数量必须直接引用“程序统计数量”，不得从长列表重新计数或根据指标行数推算。'
+                         '明确区分输入文件总数、识别洪水场次、率定/验证文件数和各模型实际评价文件数。'
+                         '单文件连续序列的评价文件数不等于洪水场次；不得把某模型仅成功评价的数量写成全部实测洪水数量。'
+                         '不得将分类子集或去重后的日期编码数量替代总场次；部分模型失败须结合模型运行说明单独说明。')
+        if kind == '阶段':
+            instructions += ('直接从模型模拟表现开始，不要添加开场免责声明，也不要设置“报告范围与证据边界”'
+                             '段落或章节；必要的评估条件在对应结论处简要注明。小结概括当前效果与下一步建议。')
+        scope='标明未运行步骤和缺少证据的项目；不得编造指标、排名、收敛轨迹或敏感性结论。'
+        prompt='请根据以下真实计算证据生成'+kind+' Markdown 分析报告。'+scope+instructions+'\n'+text
     with llm_settings(settings):
-        report = call_minimax('请根据以下真实计算证据生成'+kind+' Markdown 分析报告。'+scope+instructions+'\n'+text,
+        report = call_minimax(prompt,
                               max_output_tokens=8192,continuations=2)
     if report.startswith('[ERROR]'):
         return '### 智能分析暂不可用\n\n'+report+'\n\n确定性统计结果仍可在工作台查看。'
