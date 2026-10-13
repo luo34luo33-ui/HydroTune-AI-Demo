@@ -321,17 +321,31 @@ def postprocess(prepared, simulation, config, kind):
     rows, charts, warnings = [], deepcopy(simulation['charts']), []
     weight_rows = []
     if kind == 'bma':
-        for event, chart in zip(events, charts):
-            available = {name: files[event['name']] for name, files in file_simulation_results.items() if event['name'] in files}
-            if len(available) < 2:
-                warnings.append(f"{event['name']} 至少需要两个有效模型才能运行 BMA。")
+        model_names,mean_scores,counts=[],[],[]
+        for name,files in file_simulation_results.items():
+            scores=[r['nse'] for r in files.values() if np.isfinite(r['nse']) and r['nse']>-900]
+            if not scores:
+                warnings.append(f'{name} 没有有效场次 NSE，未参与 BMA。')
                 continue
-            weights = calc_bma_weights([r['nse'] for r in available.values()])
-            ensemble = apply_bma_ensemble([r['simulated'] for r in available.values()], weights)
+            model_names.append(name)
+            mean_scores.append(float(np.mean(scores)))
+            counts.append(len(scores))
+        weights=calc_bma_weights(mean_scores) if len(model_names)>=2 else []
+        if len(model_names)<2:
+            warnings.append('至少需要两个具有有效场次 NSE 的模型才能运行 BMA。')
+        else:
+            weight_rows=[{'模型':name,'场次平均 NSE':score,'有效场次数':count,'权重':float(weight)}
+                         for name,score,count,weight in zip(model_names,mean_scores,counts,weights)]
+        for event, chart in zip(events, charts):
+            if len(model_names)<2:
+                continue
+            missing=[name for name in model_names if event['name'] not in file_simulation_results[name]]
+            if missing:
+                warnings.append(f"{event['name']} 缺少 {'、'.join(missing)} 模拟结果，已跳过 BMA，以保持统一模型权重。")
+                continue
+            ensemble = apply_bma_ensemble([file_simulation_results[name][event['name']]['simulated'] for name in model_names], weights)
             category = '率定' if event['name'] in calib_names else '验证'
             rows.append(_metric_row('BMA集成', event['name'], category, event['flow'], ensemble, warmup))
-            for name, weight in zip(available, weights):
-                weight_rows.append({'文件': event['name'], '模型': name, '权重': float(weight)})
             start = warmup if 0 < warmup < len(ensemble) else 0
             chart['figure']['data'].append(go.Scatter(x=chart['figure']['data'][0]['x'], y=ensemble[start:], name='BMA集成', line={'color':COLORS['BMA集成']}).to_plotly_json())
     corrected_flow = {}
@@ -469,7 +483,7 @@ def generate_report(prepared, simulation=None, posts=None, settings=None, kind='
             evidence.update({'模型指标': summary(rows), '率定配置': simulation['configuration'],
                              '参数': simulation['parameters'], '模型运行说明': simulation['warnings']})
         evidence['后处理'] = {name: {'权重': p['weights'], '指标': summary(p['metrics']), '说明': p['warnings']} for name,p in (posts or {}).items()}
-        evidence['评估条件'] = 'BMA 按本场观测 NSE 计算权重；多场 XGB 校正使用真实误差滞后，属于回顾性评估。未提供收敛轨迹或参数敏感性分析。'
+        evidence['评估条件'] = 'BMA 按各模型所有有效场次（含率定与验证）的平均 NSE 计算统一权重，各场次使用同一组权重，属于回顾性融合评价；多场 XGB 校正使用真实误差滞后，属于回顾性评估。未提供收敛轨迹或参数敏感性分析。'
         text = json.dumps(evidence, ensure_ascii=False, cls=PlotlyJSONEncoder)
         instructions = ('正文以分析结论为主，约 1200–1800 字；数据概况简要汇总，不逐行复述文件清单、'
                         '洪水统计或参数表。指标表仅列模型与率定/验证汇总，避免大量数据表耗尽输出篇幅。'

@@ -175,7 +175,7 @@ def render(state,module,choice,series,phase,metric):
     elif module=='post':
         if simulation is None:
             return notices+[empty('先完成模型模拟','后处理使用已经完成的真实模拟结果。')]
-        content = [html.Div('BMA 按本场观测 NSE 计算权重；多场 XGB 使用真实误差滞后，属于回顾性评估。',className='notice')]
+        content = [html.Div('BMA 按各模型所有有效场次（含率定与验证）的平均 NSE 计算统一权重，应用于全部场次，属于回顾性融合评价；多场 XGB 使用真实误差滞后，属于回顾性评估。',className='notice')]
         for kind,title in [('bma','BMA 模型融合'),('xgb','XGB 误差校正')]:
             post=state['posts'].get(kind)
             result_card=folding_card if kind=='bma' else card

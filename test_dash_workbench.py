@@ -214,6 +214,31 @@ def test_real_pso_progress_and_no_llm(files,config):
     assert any(value is not None and value>0 for value in progress)
 
 
+@pytest.mark.parametrize('missing_result',[False,True])
+def test_bma_uses_global_mean_nse_weights_for_every_event(files,config,missing_result):
+    config.update(mode=analysis.UPLOAD_MODES[2],models=['Tank Model','HBV Model'])
+    prepared=analysis.preprocess(files+[('second.csv',files[0][1])],config)
+    simulation=analysis.simulate(prepared,config,imported_parameters())
+    names=[event['name'] for event in prepared['events']]
+    for model,scores,value in [('Tank Model',[.9,.1],10.),('HBV Model',[.1,.9],20.)]:
+        for name,score in zip(names,scores):
+            simulation['file_results'][model][name].update(nse=score,simulated=np.full(32,value))
+    if missing_result:
+        del simulation['file_results']['HBV Model'][names[1]]
+    post=analysis.postprocess(prepared,simulation,config,'bma')
+    expected=analysis.calc_bma_weights([.5,.1 if missing_result else .5])
+    assert [row['权重'] for row in post['weights']]==pytest.approx(expected)
+    assert [row['场次平均 NSE'] for row in post['weights']]==pytest.approx([.5,.1 if missing_result else .5])
+    assert all('文件' not in row for row in post['weights'])
+    assert len(post['metrics'])==(1 if missing_result else 2)
+    for chart in post['charts']:
+        traces=[trace for trace in chart['figure']['data'] if trace['name']=='BMA集成']
+        if traces:
+            assert np.asarray(traces[0]['y'])==pytest.approx(np.full(32,10*expected[0]+20*expected[1]))
+    if missing_result:
+        assert '统一模型权重' in post['warnings'][0]
+
+
 def test_only_one_model_has_explanatory_bma_state(files,config):
     prepared=analysis.preprocess(files,config)
     simulation=analysis.simulate(prepared,config,imported_parameters())
