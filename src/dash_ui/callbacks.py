@@ -9,7 +9,7 @@ from dash import ALL, Input, Output, State, ctx, html, no_update
 from . import tasks
 from .configuration import ALGORITHMS, CONFIG_IDS, parse_config
 from .layouts import MODULES
-from .snapshot import build_snapshot
+from .snapshot import build_snapshot, capture_state
 from .presentation import charts_for, filtered_figure, render, semantic_detail
 
 ACTIONS=['confirm','simulate','bma','xgb','pre-report','stage-report','report','test-llm']
@@ -53,17 +53,27 @@ def register(app):
     def upstream_mapping(routing):
         return {} if 'on' in routing else {'display':'none'}
 
+    snapshot_ids=CONFIG_IDS+['llm-provider','llm-region','llm-model']
+    app.clientside_callback(
+        "function(n,key,rev,module,choice,series,phase,metric,format,...values){return dash_clientside.hydrotune.capture(n,key,rev,module,choice,series,phase,metric,format,values,"+repr(snapshot_ids)+");}",
+        Output('snapshot-ui','data'),Input('save-results','n_clicks'),State('render-key','data'),State('result-revision','data'),
+        State('module-tabs','value'),State('chart-choice','value'),State('series-choice','value'),State('phase-choice','value'),
+        State('metric-choice','value'),State('chart-format','value'),*[State(id_,'value') for id_ in snapshot_ids],prevent_initial_call=True)
+
     @app.callback(Output('download-results','data'),Output('snapshot-message','children'),
-                  Input('save-results','n_clicks'),prevent_initial_call=True)
-    def save_results(_):
+                  Input('snapshot-ui','data'),prevent_initial_call=True)
+    def save_results(ui):
         with tasks.lock:
             state=tasks.current()
-            if state['busy'] or not (state['prepared'] or state['basin']):
-                return no_update,'请先完成数据分析，再保存运行结果。'
-            snapshot=deepcopy({key:state[key] for key in (
-                'prepared','simulation','posts','reports','basin','confirmed_config',
-                'stale_data','stale_simulation','space_error','semantic_selection')})
-        return {'content':build_snapshot(snapshot),'filename':'HydroTune-results.html','type':'text/html'},'已保存完整展示页面，可离线打开。'
+            key=ui.get('render_key') if ui else None
+            expected=[state['revision'],ui.get('module'),ui.get('choice'),ui.get('series') or None,ui.get('phase'),ui.get('metric')] if ui else None
+            normalized=list(key) if key else None
+            if normalized:
+                normalized[3]=normalized[3] or None
+            if not ui or not ui.get('ready') or ui.get('revision')!=state['revision'] or normalized!=expected:
+                return no_update,'页面仍在更新，请等待结果显示完整后再保存快照。'
+            snapshot=capture_state(state)
+        return {'content':build_snapshot(snapshot,ui),'filename':'HydroTune-results.html','type':'text/html'},'已保存离线工作台快照；运行状态冻结在保存时刻。'
 
     @app.callback(Output('landing','style'),Output('workspace','style'),Output('module-tabs','value'),Output('url','search'),
                   Input('url','pathname'),Input('url','search'),Input('module-tabs','value'))
@@ -184,7 +194,7 @@ def register(app):
                     {} if state['busy'] or value is not None else {'display':'none'},
                     '服务端会话已失效（可能因服务重启或长时间未使用），请重新选择并确认数据。' if had_confirmed and state['confirmed_config'] is None else '',
                     bool(had_confirmed or state['confirmed_config'] is not None),
-                    not bool(state['reports'].get('report')),not bool(state['posts'].get('xgb',{}).get('corrected_flow')),state['busy'] or not bool(state['prepared'] or state['basin'])]+[state['busy'] for action in ACTIONS]
+                    not bool(state['reports'].get('report')),not bool(state['posts'].get('xgb',{}).get('corrected_flow')),False]+[state['busy'] for action in ACTIONS]
 
     @app.callback(Output('file-list','children'),Output('file-list-key','data'),Input('poll','n_intervals'),State('file-list-key','data'))
     def pending_files(_,previous):

@@ -31,7 +31,7 @@ def current():
             if now - state['touched'] > 12 * 3600 and not state['busy']:
                 del sessions[key]
         state = sessions.setdefault(sid, {
-            'touched': now, 'pending': {}, 'confirmed_files': [], 'parameters': {}, 'confirmed_parameters': {},
+            'touched': now, 'pending': {}, 'confirmed_files': [], 'confirmed_file_metadata': [], 'parameters': {}, 'confirmed_parameters': {},
             'config': None, 'config_error': '', 'confirmed_config': None, 'llm': {},
             'prepared': None, 'simulation': None, 'posts': {}, 'reports': {}, 'basin': None, 'semantic_selection': 0,
             'revision': 0, 'input_version': 0, 'job_id': 0, 'busy': False,
@@ -119,7 +119,9 @@ def run(state, snapshot, action, job_id, version):
                 space_error = '已选择 DEM，请补充 SHP ZIP 流域边界。'
             update = dict(prepared=prepared, simulation=None, posts={}, reports={}, basin=basin, semantic_selection=0,
                           space_error=space_error, stale_data=False, stale_simulation=False,
-                          confirmed_config=config, confirmed_files=list(snapshot['pending']),confirmed_parameters=snapshot['parameters'])
+                          confirmed_config=config, confirmed_files=list(snapshot['pending']),confirmed_parameters=snapshot['parameters'],
+                          confirmed_file_metadata=[{'key':key,'name':f['name'],'kind':f['kind'],'size':len(f['content'])}
+                                                   for key,f in snapshot['pending'].items()])
         elif action == 'simulate':
             result = analysis.simulate(snapshot['prepared'], config, snapshot['confirmed_parameters'], progress)
             update = dict(simulation=result, posts={}, reports={}, stale_simulation=False)

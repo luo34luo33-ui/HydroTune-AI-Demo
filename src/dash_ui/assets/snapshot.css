@@ -1,0 +1,21 @@
+.snapshot-workbench .snapshot-select{font:12px Arial,"Microsoft YaHei",sans-serif;width:100%;min-height:50px;border:1px solid #d6dfe7;border-radius:5px;background:#fff;color:var(--ink);padding:10px 12px}
+.snapshot-workbench .snapshot-multiselect{position:relative;margin:0;min-width:0}
+.snapshot-workbench .snapshot-multiselect summary{font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between}
+.snapshot-workbench .snapshot-multiselect summary::after{content:'⌄';padding-left:12px;color:#64748b}
+.snapshot-workbench .snapshot-series-menu{position:absolute;z-index:20;top:52px;left:0;min-width:100%;max-height:260px;overflow:auto;background:white;border:1px solid #d6dfe7;border-radius:6px;box-shadow:0 6px 24px #092b4c18;padding:6px}
+.snapshot-workbench .snapshot-series-menu label{display:flex;align-items:center;gap:8px;padding:8px;white-space:nowrap;font-size:12px}
+.snapshot-workbench #sidebar input[readonly],.snapshot-workbench #sidebar select:disabled{color:var(--ink);background:#f8fbfd;opacity:1;cursor:default}
+.snapshot-workbench #sidebar input[type=checkbox]:disabled{opacity:1;accent-color:var(--blue)}
+.snapshot-workbench #sidebar button:disabled{cursor:default;opacity:.65}
+.snapshot-workbench .module-tabs{display:flex;flex-direction:row;border-bottom:1px solid var(--line)}
+.snapshot-workbench .module-tab{flex:1;background:white;color:#64748b;border-radius:0;border:0;border-bottom:3px solid transparent;padding:20px 10px;font-weight:400}
+.snapshot-workbench .module-tab.selected{border-bottom-color:var(--teal);color:var(--blue);font-weight:600}
+.snapshot-workbench .snapshot-chart{width:100%;min-height:410px}
+.snapshot-workbench .snapshot-badge{flex-basis:100%;font-size:11px;color:var(--blue);line-height:1.7}
+.snapshot-workbench pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px}
+.snapshot-workbench #semantic-event{margin:10px 0}
+.snapshot-workbench [hidden]{display:none!important}
+.snapshot-workbench #report-copy{padding:10px;font-size:11px;background:white;color:var(--blue);border:1px solid #cbdce5}
+.snapshot-workbench progress{animation:none}
+.snapshot-workbench .snapshot-progress-unknown{width:180px;height:4px;border-radius:4px;background:repeating-linear-gradient(120deg,#d9ecec 0,#d9ecec 8px,#75b8ba 8px,#75b8ba 14px)}
+.snapshot-workbench .table-scroll:empty{display:none}

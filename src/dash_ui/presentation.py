@@ -92,7 +92,7 @@ def basin_card(state):
         labels = {'area_km2':'流域面积 (km²)','min_m':'最低高程 (m)',
                   'max_m':'最高高程 (m)','mean_m':'平均高程 (m)','crs':'坐标系'}
         return card('流域概况',table([{labels.get(k,k):v for k,v in basin.items() if k!='figure'}]),
-                    dcc.Graph(figure=basin['figure'],config={'responsive':True,'displaylogo':False}))
+                    dcc.Graph(id='basin-chart',figure=basin['figure'],config={'responsive':True,'displaylogo':False}))
     return empty('流域概况',state['space_error'] or '尚未确认流域空间数据。可上传 SHP ZIP，DEM 为可选项。')
 
 
@@ -102,7 +102,7 @@ def semantic_detail(prepared, index):
             html.Div([html.Span(tag,className='semantic-tag') for tag in view['tags']],className='semantic-tags'),
             html.Div([kpi(label,value,unit) for label,value,unit in view['metrics']],className='kpi-grid'),
             html.P(view['sentence'],className='notice'),
-            dcc.Graph(figure=view['figure'],config={'responsive':True,'displaylogo':False}),
+            dcc.Graph(id='semantic-chart',figure=view['figure'],config={'responsive':True,'displaylogo':False}),
             html.P('浅青区域：起点至主峰；浅蓝区域：主峰至终点。多峰场次以主峰划分，仅作过程定位。',className='hint')]
 
 
@@ -168,7 +168,7 @@ def render(state,module,choice,series,phase,metric):
         if series:
             rows=[r for r in rows if r['模型'] in series]
         totals=summary(rows)
-        chart=[] if choice=='模型性能比较' else [dcc.Graph(figure=performance_figure(state,series,phase,metric),config={'responsive':True,'displaylogo':False})]
+        chart=[] if choice=='模型性能比较' else [dcc.Graph(id='performance-chart',figure=performance_figure(state,series,phase,metric),config={'responsive':True,'displaylogo':False})]
         content.append(card('模型性能比较',html.P('指标按完整场次计算。',className='hint'),table(totals),*chart))
     else:
         return notices+[card('综合智能分析报告',markdown(state['reports'].get('report')))]

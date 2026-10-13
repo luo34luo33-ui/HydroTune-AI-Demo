@@ -98,10 +98,12 @@ def test_semantic_selection_is_read_only_and_exported(files,config):
         assert (state['revision'],state['input_version'],state['job_id'])==before
         assert state['semantic_selection']==1
         exported=build_snapshot(state)
-    assert '<option value="1" selected>' in exported
-    assert 'selector.addEventListener(\'change\',showEvent)' in exported
-    assert '完整语义编码表' in exported and '代表性规则评分' in exported
-    assert 'second.csv' in exported and '非洪水等级或重现期' in exported
+    from test_dash_snapshot import payload
+    data=payload(exported)
+    assert data['semantic_selection']==1
+    assert len(data['portraits'])==2
+    assert '完整语义编码表' in str(data) and '代表性规则评分' in str(data)
+    assert 'second.csv' in str(data) and '非洪水等级或重现期' in str(data)
 
 
 def test_process_chart_uses_real_dates_and_preserves_missing_time_fallback(files,config):
@@ -472,9 +474,11 @@ def test_offline_exhibition_export_uses_real_results_without_credentials(config)
                      stale_simulation=True)
         exported=build_snapshot(state)
     assert 'NEVER-EXPORT' not in exported and 'PRIVATE-UPLOAD' not in exported
-    assert '<h1>展会诊断</h1>' in exported and '<td>真实</td>' in exported
+    from test_dash_snapshot import payload
+    decoded=str(payload(exported))
+    assert '<h1>展会诊断</h1>' in decoded and '<td>真实</td>' in decoded
     assert '<script>alert(1)</script>' not in exported
-    assert '配置已变化' in exported and '尚未生成' in exported
+    assert '配置已变化' in decoded and '尚未生成' in decoded
     assert 'Plotly.newPlot' in exported and '<script src=' not in exported
     assert 'BMA集成' in exported and posts['xgb']['metrics']
     assert all(row['模型'] in exported for row in posts['xgb']['metrics'])
