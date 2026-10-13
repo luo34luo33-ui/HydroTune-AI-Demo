@@ -18,10 +18,20 @@
     }
     function performance(rows,series,phase,metric,baseLayout) {
         const totals=aggregate(rows,series,phase);
+        const colors={'率定':'#092B4C','验证':'#08A6AD'};
+        const unit=['RMSE','MAE'].includes(metric)?' · m³/s':metric==='PBIAS'?' · %':'';
+        const names=[...new Set(totals.map(r=>r['模型']))];
         return {data:[...new Set(totals.map(r=>r['类型']))].sort().map(category=>{
             const values=totals.filter(r=>r['类型']===category);
-            return {type:'bar',name:category,x:values.map(r=>r['模型']),y:values.map(r=>r[metric])};
-        }),layout:{...(baseLayout||{}),barmode:'group',yaxis:{...(baseLayout?.yaxis||{}),title:{text:metric}},paper_bgcolor:'white',plot_bgcolor:'white'}};
+            return {type:'bar',name:category,x:values.map(r=>r['模型']),y:values.map(r=>r[metric]),
+                marker:{color:colors[category]||'#7893AA',cornerradius:5,line:{width:0}},
+                texttemplate:'%{y:.3f}',textposition:'outside',cliponaxis:false,textfont:{size:12,color:'#334155'},
+                hovertemplate:'<b>%{x}</b><br>'+category+' · 平均 '+metric+': %{y:.3f}'+unit+'<extra></extra>'};
+        }),layout:{...(baseLayout||{}),barmode:'group',
+            title:{...(baseLayout?.title||{}),text:'<b>'+metric+'</b> · 场次平均表现'},
+            xaxis:{...(baseLayout?.xaxis||{}),tickmode:'array',tickvals:names,ticktext:names.map(name=>name.replace(' Model','').replace('-XGB',' + XGB'))},
+            yaxis:{...(baseLayout?.yaxis||{}),title:{text:'平均 '+metric+unit},tickformat:['NSE','KGE'].includes(metric)?'.2f':'.3~g'},
+            paper_bgcolor:'white',plot_bgcolor:'white'}};
     }
     window.HydroSnapshot={aggregate,performance};
     const source=document.getElementById('snapshot-data');

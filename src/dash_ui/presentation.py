@@ -57,10 +57,30 @@ def performance_figure(state, series, phase, metric):
         rows=[r for r in rows if r['模型'] in series]
     totals=summary(rows)
     figure=go.Figure()
+    stage_colors={'率定':'#092B4C','验证':'#08A6AD'}
+    unit=' · m³/s' if metric in ('RMSE','MAE') else ' · %' if metric=='PBIAS' else ''
     for category in sorted({r['类型'] for r in totals}):
         values=[r for r in totals if r['类型']==category]
-        figure.add_bar(x=[r['模型'] for r in values],y=[r[metric] for r in values],name=category)
-    figure.update_layout(template='plotly_white',barmode='group',yaxis_title=metric)
+        figure.add_bar(x=[r['模型'] for r in values],y=[r[metric] for r in values],name=category,
+                       marker=dict(color=stage_colors.get(category,'#7893AA'),cornerradius=5,line_width=0),
+                       texttemplate='%{y:.3f}',textposition='outside',cliponaxis=False,
+                       textfont=dict(size=12,color='#334155'),
+                       hovertemplate='<b>%{x}</b><br>'+category+' · 平均 '+metric+': %{y:.3f}'+unit+'<extra></extra>')
+    model_names=list(dict.fromkeys(r['模型'] for r in totals))
+    figure.update_layout(template='plotly_white',barmode='group',bargap=.36,bargroupgap=.14,
+                         height=420,paper_bgcolor='white',plot_bgcolor='white',
+                         title=dict(text=f'<b>{metric}</b> · 场次平均表现',x=.02,font=dict(size=16,color='#092B4C')),
+                         font=dict(family='Arial, Microsoft YaHei',size=12,color='#475569'),
+                         margin=dict(l=65,r=30,t=65,b=85),
+                         xaxis=dict(title=None,tickmode='array',tickvals=model_names,
+                                    ticktext=[name.replace(' Model','').replace('-XGB',' + XGB') for name in model_names],
+                                    tickangle=0,showgrid=False,showline=True,linecolor='#E2E8F0',automargin=True),
+                         yaxis=dict(title='平均 '+metric+unit,gridcolor='#EDF2F7',gridwidth=1,
+                                    zeroline=True,zerolinecolor='#CBD5E1',zerolinewidth=1,
+                                    rangemode='tozero',tickformat='.2f' if metric in ('NSE','KGE') else '.3~g',automargin=True),
+                         legend=dict(orientation='h',x=.5,xanchor='center',y=-.18,
+                                     bgcolor='rgba(0,0,0,0)',font=dict(size=12),tracegroupgap=16),
+                         hoverlabel=dict(bgcolor='white',bordercolor='#DCE5EE',font_size=12))
     return figure
 
 
