@@ -51,8 +51,7 @@ def portrait(prepared, index):
     peak -= start
     usable=analysis_start-start
     rise=usable+int(np.argmin(flow[usable:peak+1]))
-    figure.add_vrect(x0=x[usable], x1=x[peak], fillcolor='#08A6AD', opacity=.09, line_width=0, layer='below')
-    figure.add_vrect(x0=x[peak], x1=x[-1], fillcolor='#092B4C', opacity=.05, line_width=0, layer='below')
+    figure.add_vrect(x0=x[rise], x1=x[-1], fillcolor='#08A6AD', opacity=.09, line_width=0, layer='below')
     cutoff=boundary.get('warmup_end_idx',start)-start
     if cutoff>0 and prepared.get('warmup_hours',0):
         if dated:
