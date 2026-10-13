@@ -23,14 +23,15 @@
         const names=[...new Set(totals.map(r=>r['模型']))];
         return {data:[...new Set(totals.map(r=>r['类型']))].sort().map(category=>{
             const values=totals.filter(r=>r['类型']===category);
-            return {type:'bar',name:category,x:values.map(r=>r['模型']),y:values.map(r=>r[metric]),
+            return {type:'bar',name:category,x:values.map(r=>r['模型']),
+                y:values.map(r=>metric==='NSE'&&r[metric]!==null?Math.abs(r[metric]):r[metric]),customdata:values.map(r=>r[metric]),
                 marker:{color:colors[category]||'#7893AA',cornerradius:5,line:{width:0}},
                 texttemplate:'%{y:.3f}',textposition:'outside',cliponaxis:false,textfont:{size:12,color:'#334155'},
-                hovertemplate:'<b>%{x}</b><br>'+category+' · 平均 '+metric+': %{y:.3f}'+unit+'<extra></extra>'};
+                hovertemplate:'<b>%{x}</b><br>'+category+' · 平均 '+metric+': %{customdata:.3f}'+unit+'<extra></extra>'};
         }),layout:{...(baseLayout||{}),barmode:'group',
-            title:{...(baseLayout?.title||{}),text:'<b>'+metric+'</b> · 场次平均表现'},
+            title:{...(baseLayout?.title||{}),text:metric==='NSE'?'<b>|NSE|</b> · 场次平均 NSE 的绝对值':'<b>'+metric+'</b> · 场次平均表现'},
             xaxis:{...(baseLayout?.xaxis||{}),tickmode:'array',tickvals:names,ticktext:names.map(name=>name.replace(' Model','').replace('-XGB',' + XGB'))},
-            yaxis:{...(baseLayout?.yaxis||{}),title:{text:'平均 '+metric+unit},tickformat:['NSE','KGE'].includes(metric)?'.2f':'.3~g'},
+            yaxis:{...(baseLayout?.yaxis||{}),title:{text:metric==='NSE'?'|NSE|':'平均 '+metric+unit},tickformat:['NSE','KGE'].includes(metric)?'.2f':'.3~g'},
             paper_bgcolor:'white',plot_bgcolor:'white'}};
     }
     window.HydroSnapshot={aggregate,performance};

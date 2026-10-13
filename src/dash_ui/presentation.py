@@ -61,21 +61,23 @@ def performance_figure(state, series, phase, metric):
     unit=' · m³/s' if metric in ('RMSE','MAE') else ' · %' if metric=='PBIAS' else ''
     for category in sorted({r['类型'] for r in totals}):
         values=[r for r in totals if r['类型']==category]
-        figure.add_bar(x=[r['模型'] for r in values],y=[r[metric] for r in values],name=category,
+        raw_values=[r[metric] for r in values]
+        figure.add_bar(x=[r['模型'] for r in values],y=[abs(value) if pd.notna(value) else value for value in raw_values] if metric=='NSE' else raw_values,
+                       customdata=raw_values,name=category,
                        marker=dict(color=stage_colors.get(category,'#7893AA'),cornerradius=5,line_width=0),
                        texttemplate='%{y:.3f}',textposition='outside',cliponaxis=False,
                        textfont=dict(size=12,color='#334155'),
-                       hovertemplate='<b>%{x}</b><br>'+category+' · 平均 '+metric+': %{y:.3f}'+unit+'<extra></extra>')
+                       hovertemplate='<b>%{x}</b><br>'+category+' · 平均 '+metric+': %{customdata:.3f}'+unit+'<extra></extra>')
     model_names=list(dict.fromkeys(r['模型'] for r in totals))
     figure.update_layout(template='plotly_white',barmode='group',bargap=.36,bargroupgap=.14,
                          height=420,paper_bgcolor='white',plot_bgcolor='white',
-                         title=dict(text=f'<b>{metric}</b> · 场次平均表现',x=.02,font=dict(size=16,color='#092B4C')),
+                         title=dict(text='<b>|NSE|</b> · 场次平均 NSE 的绝对值' if metric=='NSE' else f'<b>{metric}</b> · 场次平均表现',x=.02,font=dict(size=16,color='#092B4C')),
                          font=dict(family='Arial, Microsoft YaHei',size=12,color='#475569'),
                          margin=dict(l=65,r=30,t=65,b=85),
                          xaxis=dict(title=None,tickmode='array',tickvals=model_names,
                                     ticktext=[name.replace(' Model','').replace('-XGB',' + XGB') for name in model_names],
                                     tickangle=0,showgrid=False,showline=True,linecolor='#E2E8F0',automargin=True),
-                         yaxis=dict(title='平均 '+metric+unit,gridcolor='#EDF2F7',gridwidth=1,
+                         yaxis=dict(title='|NSE|' if metric=='NSE' else '平均 '+metric+unit,gridcolor='#EDF2F7',gridwidth=1,
                                     zeroline=True,zerolinecolor='#CBD5E1',zerolinewidth=1,
                                     rangemode='tozero',tickformat='.2f' if metric in ('NSE','KGE') else '.3~g',automargin=True),
                          legend=dict(orientation='h',x=.5,xanchor='center',y=-.18,
