@@ -30,6 +30,7 @@ def capture_state(state):
                     'stale_data','stale_simulation','space_error','semantic_selection')})
     result.update({k:state.get(k) for k in ('phase','progress','busy','config_error')})
     result['basin_display']=deepcopy(state.get('basin_display'))
+    result['stale_reports']=deepcopy(state.get('stale_reports',{}))
     result['confirmed_config']=scientific_config(state.get('confirmed_config'))
     result['config']=scientific_config(state.get('config'))
     result['llm_public']={k:state.get('llm',{}).get(k) for k in ('provider','region','model')}

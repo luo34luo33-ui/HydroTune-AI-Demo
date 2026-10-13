@@ -399,21 +399,56 @@ def test_reports_invalidate_only_when_their_dependencies_change(files,config):
         with patch.object(analysis,'simulate',return_value={'completed':True}):
             tasks.submit(state,'simulate')
             tasks.workers.submit(lambda:None).result(timeout=15)
-        assert state['reports']=={'pre-report':'洪水报告'}
+        expected={'pre-report':'洪水报告','stage-report':'旧阶段报告','report':'旧综合报告'}
+        assert state['reports']==expected
+        assert set(state['stale_reports'])=={'stage-report','report'}
         for action in ('bma','xgb'):
-            state['reports'].update({'stage-report':'阶段报告','report':'综合报告'})
             with patch.object(analysis,'postprocess',return_value={'completed':True}):
                 tasks.submit(state,action)
                 tasks.workers.submit(lambda:None).result(timeout=15)
-            assert state['reports']=={'pre-report':'洪水报告'}
-        state['reports']['report']='综合报告'
+            assert state['reports']==expected
+            assert set(state['stale_reports'])=={'stage-report','report'}
+        with patch.object(analysis,'generate_report',return_value='新阶段报告'):
+            tasks.submit(state,'stage-report')
+            tasks.workers.submit(lambda:None).result(timeout=15)
+        expected['stage-report']='新阶段报告'
+        assert state['reports']==expected
+        assert set(state['stale_reports'])=={'report'}
         changed={**config,'xgb_depth':config['xgb_depth']+1}
         tasks.configure(state,changed)
-        assert state['reports']=={'pre-report':'洪水报告'}
+        assert state['reports']==expected
         tasks.configure(state,{**changed,'max_iter':config['max_iter']+1})
-        assert state['reports']=={'pre-report':'洪水报告'}
+        assert state['reports']==expected
         tasks.configure(state,{**changed,'area':config['area']+1})
-        assert state['reports']=={}
+        assert state['reports']==expected
+        assert set(state['stale_reports'])==set(expected)
+        state['pending']={'hydro':dict(kind='hydro',name=files[0][0],content=files[0][1])}
+        tasks.submit(state,'confirm')
+        tasks.workers.submit(lambda:None).result(timeout=15)
+        assert state['reports']=={} and state['stale_reports']=={}
+
+
+def test_stage_and_comprehensive_reports_survive_navigation_and_snapshot(files,config):
+    from src.dash_ui.snapshot import build_snapshot,capture_state
+    from test_dash_snapshot import payload
+    prepared=analysis.preprocess(files,config)
+    simulation=analysis.simulate(prepared,config,imported_parameters())
+    app=create_app()
+    with app.server.test_request_context('/'):
+        state=tasks.current()
+        state.update(prepared=prepared,simulation=simulation,confirmed_config=config,config=config,
+                     reports={'stage-report':'阶段报告原文','report':'综合报告原文'},
+                     stale_reports={'report':'后处理结果已更新'})
+        show=next(v['callback'].__wrapped__ for k,v in app.callback_map.items() if 'module-view.children' in k)
+        with patch.object(tasks,'submit',side_effect=AssertionError('navigation started a task')):
+            for module in ('simulation','post','report','data','simulation','report'):
+                view,_,_=show(state['revision'],module,None,None,'all','NSE',None)
+                if module=='simulation': assert '阶段报告原文' in str(view)
+                if module=='report':
+                    assert '综合报告原文' in str(view) and '此前报告' in str(view)
+        saved=payload(build_snapshot(capture_state(state)))
+        assert saved['reports']==state['reports']
+        assert '此前报告' in str(saved['views']['report'])
 
 
 @pytest.mark.parametrize('module',['data','simulation','post','report'])

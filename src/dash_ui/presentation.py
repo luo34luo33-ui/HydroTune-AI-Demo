@@ -35,6 +35,12 @@ def markdown(text):
     return dcc.Markdown(text or '尚未生成智能报告。使用上方按钮根据当前计算证据生成。',mathjax=True,className='markdown',dangerously_allow_html=False)
 
 
+def report_card(state,title,key):
+    reason=state.get('stale_reports',{}).get(key)
+    notice=[html.Div(reason+'。下方保留此前报告，可重新生成以更新内容。',className='notice warning')] if reason else []
+    return card(title,*notice,markdown(state['reports'].get(key)))
+
+
 def charts_for(state, module):
     if module == 'data':
         charts = list(state['prepared']['charts']) if state['prepared'] else []
@@ -184,14 +190,14 @@ def render(state,module,choice,series,phase,metric):
                    folding_card('基础数据概况',table(prepared['stats']),*[html.P(w,className='hint') for w in prepared['warnings']]),
                    folding_card('洪水统计',table(prepared['semantic_events'])),
                    semantic_card(state),
-                   card('智能预分析报告',markdown(state['reports'].get('pre-report')))]
+                   report_card(state,'智能预分析报告','pre-report')]
     elif module=='simulation':
         if simulation is None:
             return notices+[empty('准备运行水文模型','确认左侧模型、算法与参数，然后点击“启动模型运行”。')]
         rows = simulation['metrics']
         content = [card('率定与验证效果',table(summary(rows))),folding_card('模型参数',table([
             {'模型':name,'参数':key,'值':value} for name,params in simulation['parameters'].items() for key,value in params.items()])),
-                   folding_card('逐场次评价指标',table(rows)),card('阶段分析报告',markdown(state['reports'].get('stage-report'))),
+                   folding_card('逐场次评价指标',table(rows)),report_card(state,'阶段分析报告','stage-report'),
                    html.P('仅展示优化器真实反馈；当前未记录完整收敛轨迹，不绘制推算的收敛曲线。',className='hint'),
                    *[html.Div(w,className='notice warning') for w in simulation['warnings']]]
     elif module=='post':
@@ -215,7 +221,7 @@ def render(state,module,choice,series,phase,metric):
         chart=[] if choice=='模型性能比较' else [dcc.Graph(id='performance-chart',figure=performance_figure(state,series,phase,metric),config={'responsive':True,'displaylogo':False})]
         content.append(card('模型性能比较',html.P('指标按完整场次计算。',className='hint'),table(totals),*chart))
     else:
-        return notices+[card('综合智能分析报告',markdown(state['reports'].get('report')))]
+        return notices+[report_card(state,'综合智能分析报告','report')]
     figure=filtered_figure(state,module,choice,series,phase,metric)
     if figure is not None:
         content.insert(2 if module=='data' else 1,card('模型性能比较' if choice=='模型性能比较' else '水文过程',dcc.Graph(id='selected-chart',figure=figure,config={'responsive':True,'displaylogo':False})))

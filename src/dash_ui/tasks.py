@@ -33,7 +33,7 @@ def current():
         state = sessions.setdefault(sid, {
             'touched': now, 'pending': {}, 'confirmed_files': [], 'confirmed_file_metadata': [], 'parameters': {}, 'confirmed_parameters': {},
             'config': None, 'config_error': '', 'confirmed_config': None, 'llm': {},
-            'prepared': None, 'simulation': None, 'posts': {}, 'reports': {}, 'basin': None, 'basin_display': None, 'semantic_selection': 0,
+            'prepared': None, 'simulation': None, 'posts': {}, 'reports': {}, 'stale_reports': {}, 'basin': None, 'basin_display': None, 'semantic_selection': 0,
             'revision': 0, 'input_version': 0, 'job_id': 0, 'busy': False,
             'phase': '等待确认数据', 'progress': None, 'stale_data': False, 'stale_simulation': False,
             'space_error': '', 'llm_status': '使用服务器配置'})
@@ -47,6 +47,11 @@ def reset():
         sessions.pop(session.get('hydrotune'), None)
         session['hydrotune'] = uuid4().hex
         return current()
+
+
+def outdated_reports(state, keys, reason):
+    return {**state.get('stale_reports',{}),
+            **{key:reason for key in keys if key in state['reports']}}
 
 
 def configure(state, config):
@@ -63,13 +68,13 @@ def configure(state, config):
         if any(previous[k] != config[k] for k in DATA_KEYS):
             state['stale_data'] = state['prepared'] is not None or state['basin'] is not None
             state['stale_simulation'] = state['simulation'] is not None
-            state['reports'] = {}
+            state['stale_reports'] = outdated_reports(state,state['reports'],'数据配置已变化')
         elif any(previous[k] != config[k] for k in SIMULATION_KEYS):
             state['stale_simulation'] = state['simulation'] is not None
-            state['reports'] = {key:text for key,text in state['reports'].items() if key=='pre-report'}
+            state['stale_reports'] = outdated_reports(state,('stage-report','report'),'模拟配置已变化')
         elif any(previous[k] != config[k] for k in POST_KEYS):
             state['posts'].pop('xgb', None)
-            state['reports'] = {key:text for key,text in state['reports'].items() if key=='pre-report'}
+            state['stale_reports'] = outdated_reports(state,('stage-report','report'),'后处理配置已变化')
 
 
 def submit(state, action):
@@ -117,7 +122,7 @@ def run(state, snapshot, action, job_id, version):
                     space_error = str(exc)
             elif 'dem' in spatial:
                 space_error = '已选择 DEM，请补充 SHP ZIP 流域边界。'
-            update = dict(prepared=prepared, simulation=None, posts={}, reports={}, basin=basin, semantic_selection=0,
+            update = dict(prepared=prepared, simulation=None, posts={}, reports={}, stale_reports={}, basin=basin, semantic_selection=0,
                           space_error=space_error, stale_data=False, stale_simulation=False,
                           confirmed_config=config, confirmed_files=list(snapshot['pending']),confirmed_parameters=snapshot['parameters'],
                           confirmed_file_metadata=[{'key':key,'name':f['name'],'kind':f['kind'],'size':len(f['content'])}
@@ -125,12 +130,12 @@ def run(state, snapshot, action, job_id, version):
         elif action == 'simulate':
             result = analysis.simulate(snapshot['prepared'], config, snapshot['confirmed_parameters'], progress)
             update = dict(simulation=result, posts={},
-                          reports={key:text for key,text in snapshot['reports'].items() if key=='pre-report'},
+                          stale_reports=outdated_reports(snapshot,('stage-report','report'),'模拟结果已更新'),
                           stale_simulation=False)
         elif action in ('bma','xgb'):
             result = analysis.postprocess(snapshot['prepared'], snapshot['simulation'], config, action)
             update = dict(posts={**snapshot['posts'], action:result},
-                          reports={key:text for key,text in snapshot['reports'].items() if key=='pre-report'})
+                          stale_reports=outdated_reports(snapshot,('stage-report','report'),'后处理结果已更新'))
         elif action == 'test-llm':
             with llm_settings(snapshot['llm']):
                 response = call_minimax('请只回复：连接成功。')
@@ -139,7 +144,8 @@ def run(state, snapshot, action, job_id, version):
             kind = {'pre-report':'预分析','stage-report':'阶段','report':'综合'}[action]
             simulation = None if snapshot['stale_simulation'] else snapshot['simulation']
             text = analysis.generate_report(snapshot['prepared'], simulation, snapshot['posts'] if simulation else {}, snapshot['llm'], kind, snapshot['basin'])
-            update = dict(reports={**snapshot['reports'], action:text})
+            update = dict(reports={**snapshot['reports'], action:text},
+                          stale_reports={key:reason for key,reason in snapshot.get('stale_reports',{}).items() if key!=action})
         with lock:
             if job_id == state['job_id'] and version == state['input_version']:
                 state.update(update)
