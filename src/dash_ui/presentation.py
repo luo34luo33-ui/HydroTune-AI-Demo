@@ -114,7 +114,7 @@ def basin_card(state):
                        config={'responsive':True,'displaylogo':False}),className='basin-visual')
     else:
         visual=html.Div([html.Span('BASIN OVERVIEW',className='eyebrow'),html.H3('流域空间概况'),
-                        html.P(state['space_error'] or '上传流域边界与 DEM，或在“补充资料上传”中选择包含水系、雨量站点的流域展示图。')],className='basin-visual basin-placeholder')
+                        html.P(state['space_error'] or '上传流域边界和 DEM 数据，自动分析流域概况。')],className='basin-visual basin-placeholder')
     return card('流域概况',html.Div([visual,html.Aside([html.Span('流域基本情况',className='eyebrow'),
                 html.Dl([html.Div([html.Dt(label),html.Dd(value)],className='basin-fact') for label,value in facts]),
                 html.P('确认空间或水文数据后展示基本情况。',className='hint') if not facts else None],className='basin-facts')],className='basin-overview'))

@@ -9,6 +9,21 @@ from zipfile import ZipFile
 import numpy as np
 import plotly.graph_objects as go
 
+TERRAIN_COLORS = [[0,'#2B783D'],[.2,'#79AB5A'],[.4,'#C6D596'],[.6,'#E8DBAD'],
+                  [.78,'#BD9063'],[.9,'#8D6045'],[1,'#F8F8F8']]
+
+
+def map_layout(figure, title, latitude):
+    figure.update_layout(template='plotly_white',title=title,
+                         xaxis=dict(title='经度 (°E)',tickformat='.3f',constrain='domain'),
+                         yaxis=dict(title='纬度 (°N)',tickformat='.3f',scaleanchor='x',
+                                    scaleratio=1/np.cos(np.deg2rad(latitude)),constrain='domain'),
+                         showlegend=False,margin=dict(l=55,r=45,t=40,b=50))
+    figure.add_annotation(x=.94,y=.89,xref='paper',yref='paper',text='',showarrow=True,
+                          ax=0,ay=42,arrowhead=3,arrowsize=1.2,arrowwidth=2,arrowcolor='#111827')
+    figure.add_annotation(x=.94,y=.99,xref='paper',yref='paper',text='<b>N</b>',showarrow=False,
+                          xanchor='center',font=dict(size=15,color='#111827'))
+
 
 def prepared_overview_image(content: bytes, mime_type: str) -> dict:
     """Reserved integration point for an existing basin overview image.
@@ -37,6 +52,8 @@ def build_basin_overview(shapefile_zip: bytes, dem_tiff: bytes = None) -> dict:
     import rasterio
     from rasterio.io import MemoryFile
     from rasterio.mask import mask
+    from rasterio.transform import array_bounds
+    from rasterio.warp import calculate_default_transform, reproject, Resampling
 
     with TemporaryDirectory(prefix='.basin-', dir=Path(__file__).resolve().parents[2]) as directory, ZipFile(BytesIO(shapefile_zip)) as archive:
         entries = [name for name in archive.namelist() if not name.endswith('/')]
@@ -74,9 +91,8 @@ def build_basin_overview(shapefile_zip: bytes, dem_tiff: bytes = None) -> dict:
             for polygon in polygons:
                 x, y = polygon.exterior.xy
                 fig.add_trace(go.Scatter(x=list(x), y=list(y), mode='lines', fill='toself',
-                                         line={'color':'#08A6AD'}, name='流域边界'))
-            fig.update_layout(template='plotly_white', title='流域边界', xaxis_title='经度 (°)',
-                              yaxis_title='纬度 (°)', yaxis_scaleanchor='x', showlegend=False)
+                                         line={'color':'#111111','width':2},fillcolor='rgba(8,166,173,.08)', name='流域边界'))
+            map_layout(fig,'流域边界',boundary.centroid.y)
             return {'figure': fig.to_plotly_json(), 'area_km2': area_km2, 'crs': str(basin.crs)}
 
         with MemoryFile(dem_tiff) as memory, memory.open() as dem:
@@ -95,18 +111,28 @@ def build_basin_overview(shapefile_zip: bytes, dem_tiff: bytes = None) -> dict:
             stride = max(1, int(np.ceil(max(elevation.shape) / 750)))
             view = elevation[::stride, ::stride].astype(float).filled(np.nan)
             rows, cols = view.shape
-            x = transform.c + (np.arange(cols) * stride + 0.5) * transform.a
-            y = transform.f + (np.arange(rows) * stride + 0.5) * transform.e
-            fig = go.Figure(go.Heatmap(x=x, y=y, z=view, colorscale='Earth', name='高程',
-                                       colorbar={'title': '高程 (m)'}, hovertemplate='高程 %{z:.1f} m<extra></extra>'))
-            polygons = list(local.geoms) if hasattr(local, 'geoms') else [local]
+            source_transform=transform*transform.scale(stride,stride)
+            bounds=array_bounds(rows,cols,source_transform)
+            geographic_transform,width,height=calculate_default_transform(dem.crs,'EPSG:4326',cols,rows,*bounds)
+            reduction=max(1,width/750,height/750)
+            geographic_transform=geographic_transform*geographic_transform.scale(reduction,reduction)
+            width,height=int(np.ceil(width/reduction)),int(np.ceil(height/reduction))
+            geographic=np.full((height,width),np.nan)
+            reproject(view,geographic,src_transform=source_transform,src_crs=dem.crs,src_nodata=np.nan,
+                      dst_transform=geographic_transform,dst_crs='EPSG:4326',dst_nodata=np.nan,
+                      resampling=Resampling.bilinear)
+            x=geographic_transform.c+(np.arange(width)+.5)*geographic_transform.a
+            y=geographic_transform.f+(np.arange(height)+.5)*geographic_transform.e
+            fig = go.Figure(go.Heatmap(x=x, y=y, z=geographic, colorscale=TERRAIN_COLORS, name='高程',
+                                       colorbar={'title': '高程 (m)','thickness':13,'len':.75},
+                                       hovertemplate='经度 %{x:.4f}°E<br>纬度 %{y:.4f}°N<br>高程 %{z:.1f} m<extra></extra>'))
+            boundary=basin.to_crs('EPSG:4326').geometry.union_all()
+            polygons = list(boundary.geoms) if hasattr(boundary, 'geoms') else [boundary]
             for polygon in polygons:
                 px, py = polygon.exterior.xy
                 fig.add_trace(go.Scatter(x=list(px), y=list(py), mode='lines',
-                                         line={'color': '#f43f5e', 'width': 2}, name='流域边界'))
-            fig.update_layout(title='流域地形概况', xaxis_title=f'X ({dem.crs})',
-                              yaxis_title=f'Y ({dem.crs})', template='plotly_white',
-                              yaxis_scaleanchor='x', showlegend=False)
+                                         line={'color': '#111111', 'width': 2}, name='流域边界'))
+            map_layout(fig,'流域地形概况',boundary.centroid.y)
             return {'figure': fig.to_plotly_json(), 'area_km2': area_km2,
                     'min_m': float(valid.min()), 'max_m': float(valid.max()),
                     'mean_m': float(valid.mean()), 'crs': str(dem.crs)}

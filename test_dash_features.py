@@ -79,6 +79,11 @@ def test_basin_overview_and_reserved_image():
     assert result['min_m'] == 22
     assert result['max_m'] == 77
     assert len(result['figure']['data']) == 2
+    figure=result['figure']
+    assert figure['data'][1]['line']['color']=='#111111'
+    assert figure['layout']['xaxis']['title']['text']=='经度 (°E)'
+    assert figure['layout']['yaxis']['title']['text']=='纬度 (°N)'
+    assert any(a['text']=='<b>N</b>' for a in figure['layout']['annotations'])
     picture = BytesIO()
     Image.new('RGB', (2, 2)).save(picture, format='PNG')
     assert prepared_overview_image(picture.getvalue(), 'image/png')['src'].startswith('data:image/png;base64,')
